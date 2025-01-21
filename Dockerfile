@@ -17,8 +17,8 @@ LABEL org.opencontainers.image.base.name="https://hub.docker.com/pytorch/pytorch
 LABEL org.opencontainers.image.version="latest"
 
 # minimum install
-RUN ["apt-get", "-y", "update"]
-RUN ["apt-get", "-y", "install", "git", "build-essential", "google-perftools", "curl"]
+RUN apt-get -y update \
+  && apt-get -y install git build-essential google-perftools curl
 # optional if full cuda-dev is required by some downstream library
 # RUN ["apt-get", "-y", "nvidia-cuda-toolkit"]
 RUN ["/usr/sbin/ldconfig"]
@@ -45,7 +45,7 @@ RUN ["python", "/app/launch.py", "--debug", "--uv", "--use-cuda", "--log", "sdne
 # preinstall additional packages to avoid installation during runtime
 
 # actually run sdnext
-CMD ["python", "launch.py", "--debug", "--skip-all", "--listen", "--quick", "--api-log", "--log", "sdnext.log"]
+CMD ["python", "launch.py", "--debug", "--api-only", "--docs", "--listen", "--api-log", "--log", "sdnext.log"]
 
 # expose port
 EXPOSE 7860

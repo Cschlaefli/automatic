@@ -1,4 +1,6 @@
 # defaults
+Containerfile
+Dockerfile
 .history
 .vscode/
 /__pycache__
@@ -24,3 +26,4 @@
 /webui-user.sh
 /*.log.*
 /*.log
+*.sh
