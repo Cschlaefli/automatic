@@ -23,7 +23,7 @@ class Extension:
         self.mtime = 0
         self.ctime = 0
 
-    def read_info(self, force=False) -> Dict:
+    def read_info(self, force=False):
         ''' Read extension info from git repository
         :param force: Force to refetch info from git repository
         '''
@@ -57,7 +57,6 @@ class Extension:
                     if repo.active_branch:
                         self.branch = repo.active_branch.name
                 except Exception:
-                    self.branch = "[No branch]"
                     pass
                 self.commit_hash = head.hexsha
                 self.version = f"<p>{self.commit_hash[:8]}</p><p>{datetime.fromtimestamp(self.commit_date).strftime('%a %b%d %Y %H:%M')}</p>"
