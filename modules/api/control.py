@@ -1,6 +1,6 @@
 from typing import Optional, List
 from threading import Lock
-from pydantic import BaseModel, Field # pylint: disable=no-name-in-module
+from pydantic import BaseModel, Field, ConfigDict # pylint: disable=no-name-in-module
 from modules import errors, shared, processing_helpers
 from modules.api import models, helpers
 from modules.control import run
@@ -17,23 +17,126 @@ class ItemControl(BaseModel):
     end: float = Field(title="Control model end", default=1.0, description="")
     override: str = Field(title="Override image", default=None, description="")
 
+class StableDiffusionProcessingControl(BaseModel):
+    model_config = ConfigDict(extra='allow') # to allow unit and additional params
+    state: str = ''
+    units: List[str] = Field(default_factory=list) # technically this is modules.control.unit.Unit, but API represents it as string
+    # input inits and mask are Image.Image when passed to run, but are are base64 encoded images
+    inputs: List[str] = Field(default_factory=list)
+    inits: List[str] = Field(default_factory=list)
+    mask: Optional[str] = None
+    unit_type: Optional[str] = None
+    is_generator: Optional[bool] = True
+    input_type: int = 0
+    prompt: str = ''
+    negative_prompt: str = ''
+    styles: list[str] = Field(default_factory=list)
+    steps: int = 20
+    sampler_index: Optional[int] = None
+    seed: int = -1
+    subseed: int = -1
+    subseed_strength: float = 0
+    seed_resize_from_h: int = -1
+    seed_resize_from_w: int = -1
+    cfg_scale: float = 6.0
+    clip_skip: float = 1.0
+    image_cfg_scale: float = 6.0
+    diffusers_guidance_rescale: float = 0.7
+    pag_scale: float = 0.0
+    pag_adaptive: float = 0.5
+    cfg_end: float = 1.0
+    full_quality: bool = True
+    tiling: bool = False
+    hidiffusion: bool = False
+    detailer_enabled: bool = True
+    detailer_prompt: str = ''
+    detailer_negative: str = ''
+    detailer_steps: int = 10
+    detailer_strength: float = 0.3
+    hdr_mode: int = 0
+    hdr_brightness: float = 0
+    hdr_color: float = 0
+    hdr_sharpen: float = 0
+    hdr_clamp: bool = False
+    hdr_boundary: float = 4.0
+    hdr_threshold: float = 0.95
+    hdr_maximize: bool = False
+    hdr_max_center: float = 0.6
+    hdr_max_boundry: float = 1.0
+    hdr_color_picker: str = None
+    hdr_tint_ratio: float = 0
+    resize_mode_before: int = 0
+    resize_name_before: str = 'None'
+    resize_context_before: str = 'None'
+    width_before: int = 512
+    height_before: int = 512
+    scale_by_before: float = 1.0
+    selected_scale_tab_before: int = 0
+    resize_mode_after: int = 0
+    resize_name_after: str = 'None'
+    resize_context_after: str = 'None'
+    width_after: int = 0
+    height_after: int = 0
+    scale_by_after: float = 1.0
+    selected_scale_tab_after: int = 0
+    resize_mode_mask: int = 0
+    resize_name_mask: str = 'None'
+    resize_context_mask: str = 'None'
+    width_mask: int = 0
+    height_mask: int = 0
+    scale_by_mask: float = 1.0
+    selected_scale_tab_mask: int = 0
+    denoising_strength: float = 0.3
+    batch_count: int = 1
+    batch_size: int = 1
+    enable_hr: bool = False
+    hr_sampler_index: Optional[int] = None
+    hr_denoising_strength: float = 0.0
+    hr_resize_mode: int = 0
+    hr_resize_context: str = 'None'
+    hr_upscaler: Optional[str] = None
+    hr_force: bool = False
+    hr_second_pass_steps: int = 20
+    hr_scale: float = 1.0
+    hr_resize_x: int = 0
+    hr_resize_y: int = 0
+    refiner_steps: int = 5
+    refiner_start: float = 0.0
+    refiner_prompt: str = ''
+    refiner_negative: str = ''
+    video_skip_frames: int = 0
+    video_type: str = 'None'
+    video_duration: float = 2.0
+    video_loop: bool = False
+    video_pad: int = 0
+    video_interpolate: int = 0
+    sampler_name : str = "UniPC"
+    script_name: Optional[str] = None
+    script_args: list = Field(default_factory=list)
+    send_images: bool = True
+    save_images: bool = False
+    alwayson_scripts: dict = Field(default_factory=dict)
+    ip_adapter : Optional[List[models.ItemIPAdapter]] = Field(default=None, exclude=True)
+    face : Optional[models.ItemFace]= Field(default= None, exclude= True)
+    control : Optional[List[ItemControl]]= Field(default_factory=list, exclude=True)
+    extra : Optional[dict]= Field(default_factory=dict, exclude= True)
 
-ReqControl = models.create_model_from_signature(
-    func = run.control_run,
-    model_name = "StableDiffusionProcessingControl",
-    additional_fields = [
-        {"key": "sampler_name", "type": str, "default": "UniPC"},
-        {"key": "script_name", "type": str, "default": None},
-        {"key": "script_args", "type": list, "default": []},
-        {"key": "send_images", "type": bool, "default": True},
-        {"key": "save_images", "type": bool, "default": False},
-        {"key": "alwayson_scripts", "type": dict, "default": {}},
-        {"key": "ip_adapter", "type": Optional[List[models.ItemIPAdapter]], "default": None, "exclude": True},
-        {"key": "face", "type": Optional[models.ItemFace], "default": None, "exclude": True},
-        {"key": "control", "type": Optional[List[ItemControl]], "default": [], "exclude": True},
-        {"key": "extra", "type": Optional[dict], "default": {}, "exclude": True},
-    ]
-)
+#ReqControl = models.create_model_from_signature(
+#    func = run.control_run,
+#    model_name = "StableDiffusionProcessingControl",
+#    additional_fields = [
+#        {"key": "sampler_name", "type": str, "default": "UniPC"},
+#        {"key": "script_name", "type": str, "default": None},
+#        {"key": "script_args", "type": list, "default": []},
+#        {"key": "send_images", "type": bool, "default": True},
+#        {"key": "save_images", "type": bool, "default": False},
+#        {"key": "alwayson_scripts", "type": dict, "default": {}},
+#        {"key": "ip_adapter", "type": Optional[List[models.ItemIPAdapter]], "default": None, "exclude": True},
+#        {"key": "face", "type": Optional[models.ItemFace], "default": None, "exclude": True},
+#        {"key": "control", "type": Optional[List[ItemControl]], "default": [], "exclude": True},
+#        {"key": "extra", "type": Optional[dict], "default": {}, "exclude": True},
+#    ]
+#)
 
 
 class ResControl(BaseModel):
@@ -137,19 +240,20 @@ class APIControl():
             req.units.append(unit)
         return req.control
 
-    def post_control(self, req: ReqControl):
+    def post_control(self, req: StableDiffusionProcessingControl):
         self.prepare_face_module(req)
         orig_control = self.prepare_control(req)
         del req.control
 
         # prepare args
-        args = req.copy(update={  # Override __init__ params
+        args = req.model_copy(update={  # Override __init__ params
             "sampler_index": processing_helpers.get_sampler_index(req.sampler_name),
             "is_generator": True,
             "inputs": [helpers.decode_base64_to_image(x) for x in req.inputs] if req.inputs else None,
             "inits": [helpers.decode_base64_to_image(x) for x in req.inits] if req.inits else None,
             "mask": helpers.decode_base64_to_image(req.mask) if req.mask else None,
-        })
+        }) # since this doesn't validate the model, this works fine
+
         args = self.sanitize_args(args)
         send_images = args.pop('send_images', True)
 
