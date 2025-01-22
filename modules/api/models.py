@@ -1,4 +1,5 @@
 import inspect
+from datetime import datetime
 from typing import Any, Optional, Dict, List, Union
 from pydantic import BaseModel, Field, create_model, ConfigDict # pylint: disable=no-name-in-module
 from inflection import underscore
@@ -181,10 +182,10 @@ class ItemScript(BaseModel):
 class ItemExtension(BaseModel):
     name: str = Field(title="Name", description="Extension name")
     remote: str = Field(title="Remote", description="Extension Repository URL")
-    branch: str = Field(title="Branch", description="Extension Repository Branch")
+    branch: str = Field(default="local", title="Branch", description="Extension Repository Branch")
     commit_hash: str = Field(title="Commit Hash", description="Extension Repository Commit Hash")
     version: str = Field(title="Version", description="Extension Version")
-    commit_date: str = Field(title="Commit Date", description="Extension Repository Commit Date")
+    commit_date: Union[str, datetime] = Field(title="Commit Date", description="Extension Repository Commit Date")
     enabled: bool = Field(title="Enabled", description="Flag specifying whether this extension is enabled")
 
 ### request/response classes
@@ -196,7 +197,7 @@ ReqTxt2Img = PydanticModelGenerator(
         {"key": "sampler_index", "type": Union[int, str], "default": 0},
         {"key": "sampler_name", "type": str, "default": "UniPC"},
         {"key": "hr_sampler_name", "type": str, "default": "Same as primary"},
-        {"key": "script_name", "type": str, "default": "none"},
+        {"key": "script_name", "type": Optional[str], "default": None},
         {"key": "script_args", "type": list, "default": []},
         {"key": "send_images", "type": bool, "default": True},
         {"key": "save_images", "type": bool, "default": False},
@@ -209,7 +210,7 @@ ReqTxt2Img = PydanticModelGenerator(
 StableDiffusionTxt2ImgProcessingAPI = ReqTxt2Img
 
 class ResTxt2Img(BaseModel):
-    images: List[str] = Field(default=None, title="Image", description="The generated images in base64 format.")
+    images: List[str] = Field(default_factory=list, title="Image", description="The generated images in base64 format.")
     parameters: dict
     info: str
 
@@ -220,13 +221,12 @@ ReqImg2Img = PydanticModelGenerator(
         {"key": "sampler_index", "type": Union[int, str], "default": 0},
         {"key": "sampler_name", "type": str, "default": "UniPC"},
         {"key": "hr_sampler_name", "type": str, "default": "Same as primary"},
-        {"key": "script_name", "type": str, "default": "none"},
         {"key": "script_args", "type": list, "default": []},
         {"key": "init_images", "type": list, "default": None},
         {"key": "denoising_strength", "type": float, "default": 0.5},
-        {"key": "mask", "type": str, "default": None},
+        {"key": "mask", "type": Optional[str], "default": None},
         {"key": "include_init_images", "type": bool, "default": False, "exclude": True},
-        {"key": "script_name", "type": str, "default": None},
+        {"key": "script_name", "type": Optional[str], "default": None},
         {"key": "script_args", "type": list, "default": []},
         {"key": "send_images", "type": bool, "default": True},
         {"key": "save_images", "type": bool, "default": False},
@@ -239,7 +239,7 @@ ReqImg2Img = PydanticModelGenerator(
 StableDiffusionImg2ImgProcessingAPI = ReqImg2Img
 
 class ResImg2Img(BaseModel):
-    images: List[str] = Field(default=None, title="Image", description="The generated images in base64 format.")
+    images: List[str] = Field(default_factory=list, title="Image", description="The generated images in base64 format.")
     parameters: dict
     info: str
 
@@ -302,8 +302,8 @@ class ResProgress(BaseModel):
     progress: float = Field(title="Progress", description="The progress with a range of 0 to 1")
     eta_relative: float = Field(title="ETA in secs")
     state: dict = Field(title="State", description="The current state snapshot")
-    current_image: str = Field(default=None, title="Current image", description="The current image in base64 format. opts.show_progress_every_n_steps is required for this to work.")
-    textinfo: str = Field(default=None, title="Info text", description="Info text used by WebUI.")
+    current_image: Optional[str] = Field(default=None, title="Current image", description="The current image in base64 format. opts.show_progress_every_n_steps is required for this to work.")
+    textinfo: Optional[str] = Field(default=None, title="Info text", description="Info text used by WebUI.")
 
 class ResStatus(BaseModel):
     status: str = Field(title="Status", description="Current status")
@@ -373,9 +373,9 @@ _options = vars(shared.parser)['_option_string_actions']
 for key in _options:
     if _options[key].dest != 'help':
         flag = _options[key]
-        _type = str
+        _type = Optional[str]
         if _options[key].default is not None:
-            _type = type(_options[key].default)
+            _type = Optional[type(_options[key].default)]
         flags.update({flag.dest: (_type, Field(default=flag.default, description=flag.help))})
 
 FlagsModel = create_model("Flags", **flags)
@@ -389,9 +389,9 @@ class ResMemory(BaseModel):
     cuda: dict = Field(title="CUDA", description="nVidia CUDA memory stats")
 
 class ResScripts(BaseModel):
-    txt2img: list = Field(default=None, title="Txt2img", description="Titles of scripts (txt2img)")
-    img2img: list = Field(default=None, title="Img2img", description="Titles of scripts (img2img)")
-    control: list = Field(default=None, title="Control", description="Titles of scripts (control)")
+    txt2img: list = Field(default_factory=list, title="Txt2img", description="Titles of scripts (txt2img)")
+    img2img: list = Field(default_factory=list, title="Img2img", description="Titles of scripts (img2img)")
+    control: list = Field(default_factory=list, title="Control", description="Titles of scripts (control)")
 
 class ResNVML(BaseModel): # definition of http response
     name: str = Field(title="Name")
@@ -402,51 +402,3 @@ class ResNVML(BaseModel): # definition of http response
     load: dict = Field(title="Version")
     power: list = []
     state: str = Field(title="State")
-
-
-# helper function
-
-#def create_model_from_signature(func: Callable, model_name: str, additional_fields: List = [], exclude_fields: List[str] = []):
-#    from PIL import Image
-#
-#    args, _, varkw, defaults, kwonlyargs, kwonlydefaults, annotations = inspect.getfullargspec(func)
-#    config = ConfigDict(populate_by_name=True, frozen=False,
-#                        extra='allow' if varkw else 'ignore')
-#    defaults = defaults or []
-#    args = args or []
-#    for arg in exclude_fields:
-#        if arg in args:
-#            args.remove(arg)
-#    non_default_args = len(args) - len(defaults)
-#    defaults = (...,) * non_default_args + defaults
-#    keyword_only_params = {param: kwonlydefaults.get(param, Any) for param in kwonlyargs}
-#    for k, v in annotations.items():
-#        if v == List[Image.Image]:
-#            annotations[k] = List[str]
-#        elif v == Image.Image:
-#            annotations[k] = str
-#        elif str(v) == 'typing.List[modules.control.unit.Unit]':
-#            annotations[k] = List[str]
-#    model_fields = {param: (annotations.get(param, Any), default) for param, default in zip(args, defaults)}
-#
-#    for fld in additional_fields:
-#        model_def = ModelDef(
-#            field=underscore(fld["key"]),
-#            field_alias=fld["key"],
-#            field_type=fld["type"],
-#            field_value=fld["default"],
-#            field_exclude=fld["exclude"] if "exclude" in fld else False)
-#        model_fields[model_def.field] = (model_def.field_type, Field(default=model_def.field_value, alias=model_def.field_alias, exclude=model_def.field_exclude))
-#
-#    for fld in exclude_fields:
-#        if fld in model_fields:
-#            del model_fields[fld]
-#
-#    model = create_model(
-#        model_name,
-#        __base__=config,
-#        **model_fields,
-#        **keyword_only_params,
-#    )
-#    return model
-#
