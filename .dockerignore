@@ -27,3 +27,4 @@ Dockerfile
 /*.log.*
 /*.log
 *.sh
+.venv

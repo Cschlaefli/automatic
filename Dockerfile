@@ -27,10 +27,12 @@ RUN ["/usr/sbin/ldconfig"]
 COPY . /app
 WORKDIR /app
 
-# stop pip and uv from caching
-ENV PIP_NO_CACHE_DIR=true
+ARG USE_CACHE=false
+
+# stop pip and uv from caching unless build arg is set
+ENV PIP_NO_CACHE_DIR=$USE_CACHE \
+    UV_NO_CACHE=$USE_CACHE
 ENV PIP_ROOT_USER_ACTION=ignore
-ENV UV_NO_CACHE=true
 # disable model hashing for faster startup
 ENV SD_NOHASHING=true
 # set data directories
@@ -39,11 +41,24 @@ ENV SD_MODELSDIR="/mnt/models"
 ENV SD_DOCKER=true
 
 # tcmalloc is not required but it is highly recommended
-ENV LD_PRELOAD=libtcmalloc.so.4  
+ENV LD_PRELOAD=libtcmalloc.so.4
+#WIP for local build caching, mounting /opt/conda to local fs for now though
+# COPY installer.py .
+# COPY launch.py .
+# COPY requirements.txt .
+# COPY modules/cmd_args.py modules/cmd_args.py
+# COPY modules/rocm.py modules/rocm.py
+# COPY modules/script_loading.py modules/script_loading.py
+# COPY modules/zluda_installer.py modules/zluda_installer.py
+# COPY modules/paths.py modules/paths.py
+# COPY modules/errors.py modules/errors.py
+# COPY extensions/. ./extensions/
+# COPY extensions-builtin/. ./extensions-builtin/
 # sdnext will run all necessary pip install ops and then exit
 RUN ["python", "/app/launch.py", "--debug", "--uv", "--use-cuda", "--log", "sdnext.log", "--test", "--optional"]
 # preinstall additional packages to avoid installation during runtime
 
+# COPY . /app
 # actually run sdnext
 CMD ["python", "launch.py", "--debug", "--api-only", "--docs", "--listen", "--api-log", "--log", "sdnext.log"]
 
