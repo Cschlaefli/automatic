@@ -27,10 +27,16 @@ RUN ["/usr/sbin/ldconfig"]
 COPY . /app
 WORKDIR /app
 
+ARG USE_CACHE=false
+
+# fix rich logs in container
+ENV COLUMNS=200 
+ENV LOG_STDOUT=true
+
 # stop pip and uv from caching
-ENV PIP_NO_CACHE_DIR=true
+ENV PIP_NO_CACHE_DIR=$USE_CACHE
 ENV PIP_ROOT_USER_ACTION=ignore
-ENV UV_NO_CACHE=true
+ENV UV_NO_CACHE=$USE_CACHE
 # disable model hashing for faster startup
 ENV SD_NOHASHING=true
 # set data directories
@@ -41,11 +47,11 @@ ENV SD_DOCKER=true
 # tcmalloc is not required but it is highly recommended
 ENV LD_PRELOAD=libtcmalloc.so.4  
 # sdnext will run all necessary pip install ops and then exit
-RUN ["python", "/app/launch.py", "--debug", "--uv", "--use-cuda", "--log", "sdnext.log", "--test", "--optional"]
+RUN ["python", "/app/launch.py", "--debug", "--uv", "--use-cuda", "--log-stdout", "--test", "--optional"]
 # preinstall additional packages to avoid installation during runtime
 
 # actually run sdnext
-CMD ["python", "launch.py", "--debug", "--skip-all", "--listen", "--quick", "--api-log", "--log", "sdnext.log"]
+CMD ["python", "launch.py", "--debug", "--extensions-only", "--listen", "--api-log", "--log-stdout", "--api-only", "--docs"]
 
 # expose port
 EXPOSE 7860

@@ -240,6 +240,17 @@ def main():
         installer.log.info('Startup: skip all')
         installer.quick_allowed = True
         init_paths()
+    elif args.extensions_only:
+        installer.log.info('Startup: extensions only')
+        installer.quick_allowed = True
+        init_paths()
+        installer.install_extensions()
+        installer.install_requirements() # redo requirements since extensions may change them
+        if len(installer.errors) == 0:
+            installer.log.debug(f'Setup complete without errors: {round(time.time())}')
+        else:
+            installer.log.warning(f'Setup complete with errors: {installer.errors}')
+            installer.log.warning(f'See log file for more details: {installer.log_file}')
     else:
         installer.install_requirements()
         installer.install_packages()

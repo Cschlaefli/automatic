@@ -135,15 +135,16 @@ def setup_logging():
     rh.setLevel(level)
     log.addHandler(rh)
 
-    fh = RotatingFileHandler(log_file, maxBytes=32*1024*1024, backupCount=9, encoding='utf-8', delay=True) # 10MB default for log rotation
-    global log_rolled # pylint: disable=global-statement
-    if not log_rolled and args.debug and not args.log:
-        fh.doRollover()
-        log_rolled = True
+    if not args.log_stdout:
+        fh = RotatingFileHandler(log_file, maxBytes=32*1024*1024, backupCount=9, encoding='utf-8', delay=True) # 10MB default for log rotation
+        global log_rolled # pylint: disable=global-statement
+        if not log_rolled and args.debug and not args.log:
+            fh.doRollover()
+            log_rolled = True
 
-    fh.formatter = logging.Formatter('%(asctime)s | %(name)s | %(levelname)s | %(module)s | %(message)s')
-    fh.setLevel(logging.DEBUG)
-    log.addHandler(fh)
+        fh.formatter = logging.Formatter('%(asctime)s | %(name)s | %(levelname)s | %(module)s | %(message)s')
+        fh.setLevel(logging.DEBUG)
+        log.addHandler(fh)
 
     rb = RingBuffer(100) # 100 entries default in log ring buffer
     rb.setLevel(level)
@@ -167,6 +168,8 @@ def setup_logging():
 
 
 def get_logfile():
+    if args.log_stdout:
+        return None
     log_size = os.path.getsize(log_file) if os.path.exists(log_file) else 0
     log.info(f'Logger: file="{log_file}" level={logging.getLevelName(logging.DEBUG if args.debug else logging.INFO)} size={log_size} mode={"append" if not log_rolled else "create"}')
     return log_file
@@ -1401,6 +1404,7 @@ def add_args(parser):
 
     group_startup = parser.add_argument_group('Startup')
     group_startup.add_argument('--quick', default=os.environ.get("SD_QUICK",False), action='store_true', help="Bypass version checks, default: %(default)s")
+    group_startup.add_argument('--extensions-only', default=os.environ.get("SD_EXTONLY",False), action='store_true', help="Only install extensions, default: %(default)s")
     group_startup.add_argument('--skip-requirements', default=os.environ.get("SD_SKIPREQUIREMENTS",False), action='store_true', help="Skips checking and installing requirements, default: %(default)s")
     group_startup.add_argument('--skip-extensions', default=os.environ.get("SD_SKIPEXTENSION",False), action='store_true', help="Skips running individual extension installers, default: %(default)s")
     group_startup.add_argument('--skip-git', default=os.environ.get("SD_SKIPGIT",False), action='store_true', help="Skips running all GIT operations, default: %(default)s")
@@ -1426,6 +1430,7 @@ def add_args(parser):
 
     group_log = parser.add_argument_group('Logging')
     group_log.add_argument("--log", type=str, default=os.environ.get("SD_LOG", None), help="Set log file, default: %(default)s")
+    group_log.add_argument("--log-stdout", default=os.environ.get("SD_LOG_STDOUT", False), action='store_true', help="Only log to stdout not a file, default: %(default)s")
     group_log.add_argument('--debug', default=os.environ.get("SD_DEBUG",False), action='store_true', help="Run installer with debug logging, default: %(default)s")
     group_log.add_argument("--profile", default=os.environ.get("SD_PROFILE", False), action='store_true', help="Run profiler, default: %(default)s")
     group_log.add_argument('--docs', default=os.environ.get("SD_DOCS", False), action='store_true', help="Mount API docs, default: %(default)s")

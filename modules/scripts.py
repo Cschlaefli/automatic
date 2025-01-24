@@ -5,7 +5,7 @@ import time
 from collections import namedtuple
 from dataclasses import dataclass
 import gradio as gr
-from modules import paths, script_callbacks, extensions, script_loading, scripts_postprocessing, errors, timer
+from modules import paths, script_callbacks, extensions, script_loading, scripts_postprocessing, errors, timer, shared
 
 
 AlwaysVisible = object()
@@ -327,7 +327,7 @@ class ScriptSummary:
 
 class ScriptRunner:
     def __init__(self):
-        self.scripts = []
+        self.scripts : list[Script] = []
         self.selectable_scripts = []
         self.alwayson_scripts = []
         self.auto_processing_scripts = []
@@ -690,7 +690,6 @@ scripts_control: ScriptRunner = None
 scripts_current: ScriptRunner = None
 scripts_postproc: scripts_postprocessing.ScriptPostprocessingRunner = None
 reload_scripts = load_scripts  # compatibility alias
-
 
 def reload_script_body_only():
     cache = {}
