@@ -24,3 +24,6 @@
 /webui-user.sh
 /*.log.*
 /*.log
+/Containerfile
+/run.sh
+/build.sh
