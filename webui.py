@@ -9,8 +9,8 @@ import logging
 import importlib
 import contextlib
 from threading import Thread
-import modules.hashes
 import modules.loader
+import modules.hashes
 
 from installer import log, git_commit, custom_excepthook
 from modules import timer, paths, shared, extensions, gr_tempdir, modelloader
@@ -209,12 +209,33 @@ def async_policy():
     asyncio.set_event_loop_policy(AnyThreadEventLoopPolicy())
 
 
+def get_external_ip():
+    import socket
+    try:
+        ip_address = socket.gethostbyname(socket.gethostname())
+        if ip_address.startswith('127.'):
+            return None
+        return ip_address
+    except Exception:
+        return None
+
+
+def get_remote_ip():
+    import requests
+    try:
+        response = requests.get('https://api.ipify.org?format=json', timeout=2)
+        ip_address = response.json()['ip']
+        return ip_address
+    except Exception:
+        return None
+
+
 def start_common():
     log.debug('Entering start sequence')
     if shared.cmd_opts.data_dir is not None and len(shared.cmd_opts.data_dir) > 0:
-        log.info(f'Using data path: {shared.cmd_opts.data_dir}')
+        log.info(f'Base path: data="{shared.cmd_opts.data_dir}"')
     if shared.cmd_opts.models_dir is not None and len(shared.cmd_opts.models_dir) > 0 and shared.cmd_opts.models_dir != 'models':
-        log.info(f'Models path: {shared.cmd_opts.models_dir}')
+        log.info(f'Base path: models="{shared.cmd_opts.models_dir}"')
     paths.create_paths(shared.opts)
     async_policy()
     initialize()
@@ -284,6 +305,16 @@ def start_ui():
     if shared.cmd_opts.data_dir is not None:
         gr_tempdir.register_tmp_file(shared.demo, os.path.join(shared.cmd_opts.data_dir, 'x'))
     shared.log.info(f'Local URL: {local_url}')
+    if shared.cmd_opts.listen:
+        if not gradio_auth_creds:
+            shared.log.warning('Public interface enabled without authentication')
+        proto = 'https' if shared.cmd_opts.tls_keyfile is not None else 'http'
+        external_ip = get_external_ip()
+        if external_ip is not None:
+            shared.log.info(f'External URL: {proto}://{external_ip}:{shared.cmd_opts.port}')
+        public_ip = get_remote_ip()
+        if public_ip is not None:
+            shared.log.info(f'Public URL: {proto}://{public_ip}:{shared.cmd_opts.port}')
     if shared.cmd_opts.docs:
         shared.log.info(f'API Docs: {local_url[:-1]}/docs') # pylint: disable=unsubscriptable-object
         shared.log.info(f'API ReDocs: {local_url[:-1]}/redocs') # pylint: disable=unsubscriptable-object

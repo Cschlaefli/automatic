@@ -115,6 +115,7 @@ class PhotoMakerStableDiffusionXLPipeline(StableDiffusionXLPipeline):
         subfolder: str = '',
         trigger_word: str = 'img',
         pm_version: str = 'v2',
+        device: torch.device = None,
         **kwargs,
     ):
         """
@@ -197,7 +198,7 @@ class PhotoMakerStableDiffusionXLPipeline(StableDiffusionXLPipeline):
             raise NotImplementedError(f"The PhotoMaker version [{pm_version}] does not support")
 
         id_encoder.load_state_dict(state_dict["id_encoder"], strict=True)
-        id_encoder = id_encoder.to(self.device, dtype=self.unet.dtype)
+        id_encoder = id_encoder.to(device, dtype=self.unet.dtype)
         self.id_encoder = id_encoder # pylint: disable=attribute-defined-outside-init
 
         # load lora into models
@@ -272,7 +273,7 @@ class PhotoMakerStableDiffusionXLPipeline(StableDiffusionXLPipeline):
             # textual inversion: process multi-vector tokens if necessary
             prompt_embeds_list = []
             prompts = [prompt, prompt_2]
-            for prompt, tokenizer, text_encoder in zip(prompts, tokenizers, text_encoders):
+            for prompt, tokenizer, text_encoder in zip(prompts, tokenizers, text_encoders): # pylint: disable=redefined-argument-from-local
                 if isinstance(self, TextualInversionLoaderMixin):
                     prompt = self.maybe_convert_prompt(prompt, tokenizer)
 
@@ -367,17 +368,16 @@ class PhotoMakerStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                     f"`negative_prompt` should be the same type to `prompt`, but got {type(negative_prompt)} !="
                     f" {type(prompt)}."
                 )
-            elif batch_size != len(negative_prompt):
+            if batch_size != len(negative_prompt):
                 raise ValueError(
                     f"`negative_prompt`: {negative_prompt} has batch size {len(negative_prompt)}, but `prompt`:"
                     f" {prompt} has batch size {batch_size}. Please make sure that passed `negative_prompt` matches"
                     " the batch size of `prompt`."
                 )
-            else:
-                uncond_tokens = [negative_prompt, negative_prompt_2]
+            uncond_tokens = [negative_prompt, negative_prompt_2]
 
             negative_prompt_embeds_list = []
-            for negative_prompt, tokenizer, text_encoder in zip(uncond_tokens, tokenizers, text_encoders):
+            for negative_prompt, tokenizer, text_encoder in zip(uncond_tokens, tokenizers, text_encoders): # pylint: disable=redefined-argument-from-local
                 if isinstance(self, TextualInversionLoaderMixin):
                     negative_prompt = self.maybe_convert_prompt(negative_prompt, tokenizer)
 
@@ -735,8 +735,8 @@ class PhotoMakerStableDiffusionXLPipeline(StableDiffusionXLPipeline):
         ):
             discrete_timestep_cutoff = int(
                 round(
-                    self.scheduler.config.num_train_timesteps
-                    - (self.denoising_end * self.scheduler.config.num_train_timesteps)
+                    self.scheduler.config.num_train_timesteps # pylint: disable=no-member
+                    - (self.denoising_end * self.scheduler.config.num_train_timesteps) # pylint: disable=no-member
                 )
             )
             num_inference_steps = len(list(filter(lambda ts: ts >= discrete_timestep_cutoff, timesteps)))

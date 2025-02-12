@@ -7,9 +7,7 @@ import json
 import threading
 import contextlib
 from types import SimpleNamespace
-from urllib.parse import urlparse
 from enum import Enum
-import psutil
 import requests
 import gradio as gr
 import fasteners
@@ -20,8 +18,9 @@ from modules.paths import models_path, script_path, data_path, sd_configs_path, 
 from modules.dml import memory_providers, default_memory_provider, directml_do_hijack
 from modules.onnx_impl import initialize_onnx, execution_providers
 from modules.memstats import memory_stats, ram_stats # pylint: disable=unused-import
+from modules.interrogate.openclip import caption_models, caption_types, get_clip_models, refresh_clip_models, category_types
+from modules.interrogate.vqa import vlm_models, vlm_prompts
 from modules.ui_components import DropdownEditable
-import modules.interrogate
 import modules.memmon
 import modules.styles
 import modules.paths as paths
@@ -33,12 +32,11 @@ demo: gr.Blocks = None
 api = None
 progress_print_out = sys.stdout
 parser = cmd_args.parser
-url = 'https://github.com/vladmandic/automatic'
+url = 'https://github.com/vladmandic/sdnext'
 cmd_opts, _ = parser.parse_known_args()
 hide_dirs = {"visible": not cmd_opts.hide_ui_dir_config}
 xformers_available = False
 locking_available = True # used by file read/write locking
-interrogator = modules.interrogate.InterrogateModels(os.path.join("models", "interrogate"))
 sd_upscalers = []
 detailers = []
 face_restorers = []
@@ -205,7 +203,7 @@ elif cmd_opts.use_directml:
 devices.backend = devices.get_backend(cmd_opts)
 devices.device = devices.get_optimal_device()
 mem_stat = memory_stats()
-cpu_memory = round(psutil.virtual_memory().total / 1024 / 1024 / 1024, 2)
+cpu_memory = mem_stat['ram']['total'] if "ram" in mem_stat else 0
 gpu_memory = mem_stat['gpu']['total'] if "gpu" in mem_stat else 0
 native = backend == Backend.DIFFUSERS
 if not files_cache.do_cache_folders:
@@ -307,6 +305,7 @@ default_checkpoint = list_checkpoint_titles()[0] if len(list_checkpoint_titles()
 
 
 def is_url(string):
+    from urllib.parse import urlparse
     parsed_url = urlparse(string)
     return all([parsed_url.scheme, parsed_url.netloc])
 
@@ -404,23 +403,29 @@ def temp_disable_extensions():
 
 def get_default_modes():
     default_offload_mode = "none"
+    default_diffusers_offload_min_gpu_memory = 0.25
     if not (cmd_opts.lowvram or cmd_opts.medvram):
         if "gpu" in mem_stat:
             if gpu_memory <= 4:
                 cmd_opts.lowvram = True
                 default_offload_mode = "sequential"
+                default_diffusers_offload_min_gpu_memory = 0
                 log.info(f"Device detect: memory={gpu_memory:.1f} default=sequential optimization=lowvram")
-            # elif gpu_memory <= 8:
-            #     cmd_opts.medvram = True
-            #     default_offload_mode = "model"
-            #     log.info(f"Device detect: memory={gpu_memory:.1f} optimization=medvram")
+            elif gpu_memory <= 8:
+                cmd_opts.medvram = True # VAE Tiling and other stuff
+                default_offload_mode = "balanced"
+                default_diffusers_offload_min_gpu_memory = 0
+                log.info(f"Device detect: memory={gpu_memory:.1f} default=balanced optimization=medvram")
             else:
                 default_offload_mode = "balanced"
+                default_diffusers_offload_min_gpu_memory = 0.25
                 log.info(f"Device detect: memory={gpu_memory:.1f} default=balanced")
     elif cmd_opts.medvram:
         default_offload_mode = "balanced"
+        default_diffusers_offload_min_gpu_memory = 0
     elif cmd_opts.lowvram:
         default_offload_mode = "sequential"
+        default_diffusers_offload_min_gpu_memory = 0
 
     if devices.backend == "directml": # Force BMM for DirectML instead of SDP
         default_cross_attention = "Dynamic Attention BMM" if native else "Sub-quadratic"
@@ -440,10 +445,10 @@ def get_default_modes():
     if (cmd_opts.lowvram or cmd_opts.medvram) and ('Flash attention' not in default_sdp_options and 'Dynamic attention' not in default_sdp_options):
         default_sdp_options.append('Dynamic attention')
 
-    return default_offload_mode, default_cross_attention, default_sdp_options
+    return default_offload_mode, default_diffusers_offload_min_gpu_memory, default_cross_attention, default_sdp_options
 
 
-startup_offload_mode, startup_cross_attention, startup_sdp_options = get_default_modes()
+startup_offload_mode, startup_diffusers_offload_min_gpu_memory, startup_cross_attention, startup_sdp_options = get_default_modes()
 
 options_templates.update(options_section(('sd', "Models & Loading"), {
     "sd_backend": OptionInfo('diffusers', "Execution backend", gr.Radio, {"choices": ['diffusers', 'original'] }),
@@ -459,7 +464,7 @@ options_templates.update(options_section(('sd', "Models & Loading"), {
     "diffusers_move_refiner": OptionInfo(False, "Move refiner model to CPU when not in use", gr.Checkbox, {"visible": False }),
     "diffusers_extract_ema": OptionInfo(False, "Use model EMA weights when possible", gr.Checkbox, {"visible": False }),
     "diffusers_offload_mode": OptionInfo(startup_offload_mode, "Model offload mode", gr.Radio, {"choices": ['none', 'balanced', 'model', 'sequential']}),
-    "diffusers_offload_min_gpu_memory": OptionInfo(0.25, "Balanced offload GPU low watermark", gr.Slider, {"minimum": 0, "maximum": 1, "step": 0.01 }),
+    "diffusers_offload_min_gpu_memory": OptionInfo(startup_diffusers_offload_min_gpu_memory, "Balanced offload GPU low watermark", gr.Slider, {"minimum": 0, "maximum": 1, "step": 0.01 }),
     "diffusers_offload_max_gpu_memory": OptionInfo(0.70, "Balanced offload GPU high watermark", gr.Slider, {"minimum": 0.1, "maximum": 1, "step": 0.01 }),
     "diffusers_offload_max_cpu_memory": OptionInfo(0.90, "Balanced offload CPU high watermark", gr.Slider, {"minimum": 0, "maximum": 1, "step": 0.01, "visible": False }),
 
@@ -494,6 +499,7 @@ options_templates.update(options_section(('text_encoder', "Text Encoder"), {
     "sd_textencoder_cache": OptionInfo(True, "Cache text encoder results", gr.Checkbox, {"visible": False}),
     "sd_textencoder_cache_size": OptionInfo(4, "Text encoder cache size", gr.Slider, {"minimum": 0, "maximum": 16, "step": 1}),
     "comma_padding_backtrack": OptionInfo(20, "Prompt padding", gr.Slider, {"minimum": 0, "maximum": 74, "step": 1, "visible": not native }),
+    "sd_textencder_linebreak": OptionInfo(True, "Use line break as prompt segment marker", gr.Checkbox),
     "diffusers_zeros_prompt_pad": OptionInfo(False, "Use zeros for prompt padding", gr.Checkbox),
     "diffusers_pooled": OptionInfo("default", "Diffusers SDXL pooled embeds", gr.Radio, {"choices": ['default', 'weighted']}),
 }))
@@ -514,7 +520,8 @@ options_templates.update(options_section(('cuda', "Compute Settings"), {
     "cross_attention_optimization": OptionInfo(startup_cross_attention, "Attention optimization method", gr.Radio, lambda: {"choices": shared_items.list_crossattention(native)}),
     "sdp_options": OptionInfo(startup_sdp_options, "SDP options", gr.CheckboxGroup, {"choices": ['Flash attention', 'Memory attention', 'Math attention', 'Dynamic attention', 'Sage attention'], "visible": native}),
     "xformers_options": OptionInfo(['Flash attention'], "xFormers options", gr.CheckboxGroup, {"choices": ['Flash attention'] }),
-    "dynamic_attention_slice_rate": OptionInfo(4, "Dynamic Attention slicing rate in GB", gr.Slider, {"minimum": 0.1, "maximum": gpu_memory, "step": 0.1, "visible": native}),
+    "dynamic_attention_slice_rate": OptionInfo(0.5, "Dynamic Attention slicing rate in GB", gr.Slider, {"minimum": 0.01, "maximum": gpu_memory, "step": 0.01, "visible": native}),
+    "dynamic_attention_trigger_rate": OptionInfo(1, "Dynamic Attention trigger rate in GB", gr.Slider, {"minimum": 0.01, "maximum": gpu_memory*2, "step": 0.01, "visible": native}),
     "sub_quad_sep": OptionInfo("<h3>Sub-quadratic options</h3>", "", gr.HTML, {"visible": not native}),
     "sub_quad_q_chunk_size": OptionInfo(512, "Attention query chunk size", gr.Slider, {"minimum": 16, "maximum": 8192, "step": 8, "visible": not native}),
     "sub_quad_kv_chunk_size": OptionInfo(512, "Attention kv chunk size", gr.Slider, {"minimum": 0, "maximum": 8192, "step": 8, "visible": not native}),
@@ -528,6 +535,8 @@ options_templates.update(options_section(('backends', "Backend Settings"), {
     "cudnn_benchmark": OptionInfo(False, "Full-depth cuDNN benchmark"),
     "diffusers_fuse_projections": OptionInfo(False, "Fused projections"),
     "torch_expandable_segments": OptionInfo(False, "Expandable segments"),
+    "torch_tunable_ops": OptionInfo("default", "Tunable ops", gr.Radio, {"choices": ["default", "true", "false"]}),
+    "torch_tunable_limit": OptionInfo(30, "Tunable ops limit", gr.Slider, {"minimum": 1, "maximum": 100, "step": 1}),
     "cuda_mem_fraction": OptionInfo(0.0, "Memory limit", gr.Slider, {"minimum": 0, "maximum": 2.0, "step": 0.05}),
     "torch_gc_threshold": OptionInfo(70, "GC threshold", gr.Slider, {"minimum": 0, "maximum": 100, "step": 1}),
     "inference_mode": OptionInfo("no-grad", "Inference mode", gr.Radio, {"choices": ["no-grad", "inference-mode", "none"]}),
@@ -560,26 +569,35 @@ options_templates.update(options_section(('backends', "Backend Settings"), {
 }))
 
 options_templates.update(options_section(('quantization', "Quantization Settings"), {
-    "bnb_sep": OptionInfo("<h2>BitsAndBytes</h2>", "", gr.HTML),
+    "bnb_quantization_sep": OptionInfo("<h2>BitsAndBytes</h2>", "", gr.HTML),
     "bnb_quantization": OptionInfo([], "Quantization enabled", gr.CheckboxGroup, {"choices": ["Model", "VAE", "Text Encoder"], "visible": native}),
     "bnb_quantization_type": OptionInfo("nf4", "Quantization type", gr.Dropdown, {"choices": ['nf4', 'fp8', 'fp4'], "visible": native}),
     "bnb_quantization_storage": OptionInfo("uint8", "Backend storage", gr.Dropdown, {"choices": ["float16", "float32", "int8", "uint8", "float64", "bfloat16"], "visible": native}),
+
     "optimum_quanto_sep": OptionInfo("<h2>Optimum Quanto</h2>", "", gr.HTML),
     "optimum_quanto_weights": OptionInfo([], "Quantization enabled", gr.CheckboxGroup, {"choices": ["Model", "VAE", "Text Encoder", "ControlNet"], "visible": native}),
     "optimum_quanto_weights_type": OptionInfo("qint8", "Quantization weights type", gr.Dropdown, {"choices": ['qint8', 'qfloat8_e4m3fn', 'qfloat8_e5m2', 'qint4', 'qint2'], "visible": native}),
     "optimum_quanto_activations_type": OptionInfo("none", "Quantization activations type ", gr.Dropdown, {"choices": ['none', 'qint8', 'qfloat8_e4m3fn', 'qfloat8_e5m2'], "visible": native}),
+    "optimum_quanto_shuffle_weights": OptionInfo(False, "Shuffle weights", gr.Checkbox, {"visible": native}),
+
     "torchao_sep": OptionInfo("<h2>TorchAO</h2>", "", gr.HTML),
     "torchao_quantization": OptionInfo([], "Quantization enabled", gr.CheckboxGroup, {"choices": ["Model", "VAE", "Text Encoder"], "visible": native}),
     "torchao_quantization_mode": OptionInfo("pre", "Quantization mode", gr.Dropdown, {"choices": ['pre', 'post'], "visible": native}),
     "torchao_quantization_type": OptionInfo("int8_weight_only", "Quantization type", gr.Dropdown, {"choices": ['int4_weight_only', 'int8_dynamic_activation_int4_weight', 'int8_weight_only', 'int8_dynamic_activation_int8_weight', 'float8_weight_only', 'float8_dynamic_activation_float8_weight', 'float8_static_activation_float8_weight'], "visible": native}),
-    "nncf_sep": OptionInfo("<h2>NNCF</h2>", "", gr.HTML),
+
+    "nncf_compress_sep": OptionInfo("<h2>NNCF</h2>", "", gr.HTML),
     "nncf_compress_weights": OptionInfo([], "Quantization enabled", gr.CheckboxGroup, {"choices": ["Model", "VAE", "Text Encoder", "ControlNet"], "visible": native}),
     "nncf_compress_weights_mode": OptionInfo("INT8", "Quantization type", gr.Dropdown, {"choices": ['INT8', 'INT8_SYM', 'INT4_ASYM', 'INT4_SYM', 'NF4'] if cmd_opts.use_openvino else ['INT8']}),
     "nncf_compress_weights_raito": OptionInfo(0, "Compress ratio", gr.Slider, {"minimum": 0, "maximum": 1, "step": 0.01, "visible": cmd_opts.use_openvino}),
     "nncf_compress_weights_group_size": OptionInfo(0, "Group size", gr.Slider, {"minimum": -1, "maximum": 512, "step": 1, "visible": cmd_opts.use_openvino}),
     "nncf_quantize": OptionInfo([], "OpenVINO enabled", gr.CheckboxGroup, {"choices": ["Model", "VAE", "Text Encoder"], "visible": cmd_opts.use_openvino}),
-    "nncf_quant_mode": OptionInfo("INT8", "OpenVINO mode", gr.Dropdown, {"choices": ['INT8', 'FP8_E4M3', 'FP8_E5M2'], "visible": cmd_opts.use_openvino}),
-    "quant_shuffle_weights": OptionInfo(False, "Shuffle weights", gr.Checkbox, {"visible": native}),
+    "nncf_quantize_mode": OptionInfo("INT8", "OpenVINO mode", gr.Dropdown, {"choices": ['INT8', 'FP8_E4M3', 'FP8_E5M2'], "visible": cmd_opts.use_openvino}),
+    "nncf_quantize_shuffle_weights": OptionInfo(False, "Shuffle weights", gr.Checkbox, {"visible": native}),
+
+    "layerwise_quantization_sep": OptionInfo("<h2>Layerwise Casting</h2>", "", gr.HTML),
+    "layerwise_quantization": OptionInfo([], "Layerwise casting enabled", gr.CheckboxGroup, {"choices": ["Model", "Transformer", "Text Encoder"], "visible": native}),
+    "layerwise_quantization_storage": OptionInfo("float8_e4m3fn", "Layerwise casting storage", gr.Dropdown, {"choices": ["float8_e4m3fn", "float8_e5m2"], "visible": native}),
+    "layerwise_quantization_nonblocking": OptionInfo(False, "Layerwise non-blocking operations", gr.Checkbox, {"visible": native}),
 }))
 
 options_templates.update(options_section(('advanced', "Pipeline Modifiers"), {
@@ -595,10 +613,16 @@ options_templates.update(options_section(('advanced', "Pipeline Modifiers"), {
     "freeu_s1": OptionInfo(0.9, "1st stage skip", gr.Slider, {"minimum": 0.0, "maximum": 1.0, "step": 0.01}),
     "freeu_s2": OptionInfo(0.2, "2nd stage skip", gr.Slider, {"minimum": 0.0, "maximum": 1.0, "step": 0.01}),
 
-    "pag_sep": OptionInfo("<h2>Perturbed-Attention Guidance</h2>", "", gr.HTML),
+    "pag_sep": OptionInfo("<h2>PAG: Perturbed attention guidance</h2>", "", gr.HTML),
     "pag_apply_layers": OptionInfo("m0", "PAG layer names"),
 
-    "para_sep": OptionInfo("<h2>Para-Attention</h2>", "", gr.HTML),
+    "pab_sep": OptionInfo("<h2>PAB: Pyramid attention broadcast </h2>", "", gr.HTML),
+    "pab_enabled": OptionInfo(False, "Attention cache enabled"),
+    "pab_block_skip_range": OptionInfo(2, "Block skip range", gr.Slider, {"minimum": 1, "maximum": 4, "step": 1}),
+    "pab_timestep_skip_start": OptionInfo(0.1, "Timestep skip start", gr.Slider, {"minimum": 0.0, "maximum": 1.0, "step": 0.05}),
+    "pab_timestep_skip_end": OptionInfo(0.8, "Timestep skip end", gr.Slider, {"minimum": 0.0, "maximum": 1.0, "step": 0.05}),
+
+    "para_sep": OptionInfo("<h2>Para-attention</h2>", "", gr.HTML),
     "para_cache_enabled": OptionInfo(False, "First-block cache enabled"),
     "para_diff_threshold": OptionInfo(0.1, "Residual diff threshold", gr.Slider, {"minimum": 0.0, "maximum": 1.0, "step": 0.01}),
 
@@ -648,6 +672,7 @@ options_templates.update(options_section(('system-paths', "System Paths"), {
     "ckpt_dir": OptionInfo(os.path.join(paths.models_path, 'Stable-diffusion'), "Folder with stable diffusion models", folder=True),
     "diffusers_dir": OptionInfo(os.path.join(paths.models_path, 'Diffusers'), "Folder with Huggingface models", folder=True),
     "hfcache_dir": OptionInfo(default_hfcache_dir, "Folder for Huggingface cache", folder=True),
+    "tunable_dir": OptionInfo(os.path.join(paths.models_path, 'tunable'), "Folder for Tunable ops cache", folder=True),
     "vae_dir": OptionInfo(os.path.join(paths.models_path, 'VAE'), "Folder with VAE files", folder=True),
     "unet_dir": OptionInfo(os.path.join(paths.models_path, 'UNET'), "Folder with UNET files", folder=True),
     "te_dir": OptionInfo(os.path.join(paths.models_path, 'Text-encoder'), "Folder with Text encoder files", folder=True),
@@ -866,17 +891,35 @@ options_templates.update(options_section(('control', "Control Options"), {
 }))
 
 options_templates.update(options_section(('interrogate', "Interrogate"), {
-    "interrogate_keep_models_in_memory": OptionInfo(False, "Interrogate: keep models in VRAM"),
-    "interrogate_return_ranks": OptionInfo(True, "Interrogate: include ranks of model tags matches in results"),
-    "interrogate_clip_num_beams": OptionInfo(1, "Interrogate: num_beams for BLIP", gr.Slider, {"minimum": 1, "maximum": 16, "step": 1}),
-    "interrogate_clip_min_length": OptionInfo(32, "Interrogate: minimum description length", gr.Slider, {"minimum": 1, "maximum": 128, "step": 1}),
-    "interrogate_clip_max_length": OptionInfo(192, "Interrogate: maximum description length", gr.Slider, {"minimum": 1, "maximum": 256, "step": 1}),
-    "interrogate_clip_skip_categories": OptionInfo(["artists", "movements", "flavors"], "Interrogate: skip categories", gr.CheckboxGroup, lambda: {"choices": modules.interrogate.category_types()}, refresh=modules.interrogate.category_types),
-    "interrogate_deepbooru_score_threshold": OptionInfo(0.65, "Interrogate: deepbooru score threshold", gr.Slider, {"minimum": 0, "maximum": 1, "step": 0.01}),
-    "deepbooru_sort_alpha": OptionInfo(False, "Interrogate: deepbooru sort alphabetically"),
-    "deepbooru_use_spaces": OptionInfo(False, "Use spaces for tags in deepbooru"),
-    "deepbooru_escape": OptionInfo(True, "Escape brackets in deepbooru"),
-    "deepbooru_filter_tags": OptionInfo("", "Filter out tags from deepbooru output"),
+    "interrogate_default_type": OptionInfo("OpenCLiP", "Default type", gr.Radio, {"choices": ["OpenCLiP", "VLM", "DeepBooru"]}),
+    "interrogate_offload": OptionInfo(True, "Interrogate: offload models "),
+
+    "interrogate_clip_sep": OptionInfo("<h2>OpenCLiP</h2>", "", gr.HTML),
+    "interrogate_clip_model": OptionInfo("ViT-L-14/openai", "CLiP: default model", gr.Dropdown, lambda: {"choices": get_clip_models()}, refresh=refresh_clip_models),
+    "interrogate_clip_mode": OptionInfo(caption_types[0], "CLiP: default mode", gr.Dropdown, {"choices": caption_types}),
+    "interrogate_blip_model": OptionInfo(list(caption_models)[0], "CLiP: default captioner", gr.Dropdown, {"choices": list(caption_models)}),
+    "interrogate_clip_score": OptionInfo(False, "CLiP: include scores in results"),
+    "interrogate_clip_num_beams": OptionInfo(1, "CLiP: num beams", gr.Slider, {"minimum": 1, "maximum": 16, "step": 1}),
+    "interrogate_clip_min_length": OptionInfo(32, "CLiP: min length", gr.Slider, {"minimum": 1, "maximum": 128, "step": 1}),
+    "interrogate_clip_max_length": OptionInfo(74, "CLiP: max length", gr.Slider, {"minimum": 1, "maximum": 512, "step": 1}),
+    "interrogate_clip_min_flavors": OptionInfo(2, "CLiP: min flavors", gr.Slider, {"minimum": 0, "maximum": 32, "step": 1}),
+    "interrogate_clip_max_flavors": OptionInfo(8, "CLiP: max flavors", gr.Slider, {"minimum": 0, "maximum": 32, "step": 1}),
+    "interrogate_clip_skip_categories": OptionInfo(["artists", "movements", "flavors"], "CLiP: skip categories", gr.CheckboxGroup, lambda: {"choices": category_types()}, refresh=category_types),
+
+    "interrogate_vlm_sep": OptionInfo("<h2>VLM</h2>", "", gr.HTML),
+    "interrogate_vlm_model": OptionInfo(list(vlm_models)[0], "VLM: default model", gr.Dropdown, {"choices": list(vlm_models)}),
+    "interrogate_vlm_prompt": OptionInfo(vlm_prompts[2], "VLM: default prompt", DropdownEditable, {"choices": vlm_prompts }),
+    "interrogate_vlm_num_beams": OptionInfo(3, "VLM: num beams", gr.Slider, {"minimum": 1, "maximum": 16, "step": 1}),
+    "interrogate_vlm_max_length": OptionInfo(512, "VLM: max length", gr.Slider, {"minimum": 1, "maximum": 4096, "step": 1}),
+
+    "deepbooru_sep": OptionInfo("<h2>DeepBooru</h2>", "", gr.HTML),
+    "deepbooru_score_threshold": OptionInfo(0.65, "DeepBooru: score threshold", gr.Slider, {"minimum": 0, "maximum": 1, "step": 0.01}),
+    "deepbooru_max_tags": OptionInfo(74, "DeepBooru: max tags", gr.Slider, {"minimum": 1, "maximum": 512, "step": 1}),
+    "deepbooru_clip_score": OptionInfo(False, "DeepBooru: include scores in results"),
+    "deepbooru_sort_alpha": OptionInfo(False, "DeepBooru: sort alphabetically"),
+    "deepbooru_use_spaces": OptionInfo(False, "DeepBooru: use spaces for tags"),
+    "deepbooru_escape": OptionInfo(True, "DeepBooru: escape brackets"),
+    "deepbooru_filter_tags": OptionInfo("", "DeepBooru: exclude tags"),
 }))
 
 options_templates.update(options_section(('huggingface', "Huggingface"), {
@@ -902,8 +945,9 @@ options_templates.update(options_section(('extra_networks', "Networks"), {
     "extra_networks_fetch": OptionInfo(True, "UI fetch network info on mouse-over"),
     "extra_network_skip_indexing": OptionInfo(False, "Build info on first access", gr.Checkbox),
 
-    "extra_networks_model_sep": OptionInfo("<h2>Models</h2>", "", gr.HTML),
-    "extra_network_reference": OptionInfo(False, "Use reference values when available", gr.Checkbox),
+    "extra_networks_model_sep": OptionInfo("<h2>Rerefence models</h2>", "", gr.HTML),
+    "extra_network_reference_enable": OptionInfo(True, "Enable use of reference models", gr.Checkbox),
+    "extra_network_reference_values": OptionInfo(False, "Use reference values when available", gr.Checkbox),
 
     "extra_networks_lora_sep": OptionInfo("<h2>LoRA</h2>", "", gr.HTML),
     "extra_networks_default_multiplier": OptionInfo(1.0, "Default strength", gr.Slider, {"minimum": 0.0, "maximum": 2.0, "step": 0.01}),
@@ -918,7 +962,7 @@ options_templates.update(options_section(('extra_networks', "Networks"), {
     "lora_quant": OptionInfo("NF4","LoRA precision when quantized", gr.Radio, {"choices": ["NF4", "FP4"]}),
 
     "extra_networks_styles_sep": OptionInfo("<h2>Styles</h2>", "", gr.HTML),
-    "extra_networks_styles": OptionInfo(True, "Show built-in styles"),
+    "extra_networks_styles": OptionInfo(True, "Show reference styles"),
 
     "extra_networks_embed_sep": OptionInfo("<h2>Embeddings</h2>", "", gr.HTML),
     "diffusers_enable_embed": OptionInfo(True, "Enable embeddings support", gr.Checkbox, {"visible": native}),
@@ -1181,7 +1225,7 @@ if not native:
     opts.data['diffusers_offload_mode'] = 'none'
 
 prompt_styles = modules.styles.StyleDatabase(opts)
-reference_models = readfile(os.path.join('html', 'reference.json'))
+reference_models = readfile(os.path.join('html', 'reference.json')) if opts.extra_network_reference_enable else {}
 cmd_opts.disable_extension_access = (cmd_opts.share or cmd_opts.listen or (cmd_opts.server_name or False)) and not cmd_opts.insecure
 devices.args = cmd_opts
 devices.opts = opts
