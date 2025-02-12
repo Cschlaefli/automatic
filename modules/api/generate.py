@@ -84,6 +84,7 @@ class APIGenerate():
             del request.ip_adapter
 
     def post_text2img(self, txt2imgreq: models.ReqTxt2Img):
+        shared.log.info(f"Received request: {txt2imgreq}")
         self.prepare_face_module(txt2imgreq)
         script_runner = scripts.scripts_txt2img
         if not script_runner.scripts:
@@ -128,6 +129,7 @@ class APIGenerate():
         return models.ResTxt2Img(images=b64images, parameters=vars(txt2imgreq), info=info)
 
     def post_img2img(self, img2imgreq: models.ReqImg2Img):
+        shared.log.info(f"Received request: {img2imgreq}")
         self.prepare_face_module(img2imgreq)
         init_images = img2imgreq.init_images
         if init_images is None:
