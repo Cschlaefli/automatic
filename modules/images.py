@@ -10,6 +10,9 @@ import threading
 import numpy as np
 import piexif
 import piexif.helper
+
+from opentelemetry import trace
+
 from PIL import Image, PngImagePlugin, ExifTags, ImageDraw
 from modules import sd_samplers, shared, script_callbacks, errors, paths
 from modules.images_grid import image_grid, get_grid_size, split_grid, combine_grid, check_grid_size, get_font, draw_grid_annotations, draw_prompt_matrix, GridAnnotation, Grid # pylint: disable=unused-import
@@ -17,6 +20,7 @@ from modules.images_resize import resize_image # pylint: disable=unused-import
 from modules.images_namegen import FilenameGenerator, get_next_sequence_number # pylint: disable=unused-import
 from modules.video import save_video # pylint: disable=unused-import
 
+tracer = trace.get_tracer("modules.images")
 
 debug = errors.log.trace if os.environ.get('SD_PATH_DEBUG', None) is not None else lambda *args, **kwargs: None
 try:
@@ -41,7 +45,7 @@ def sanitize_filename_part(text, replace_spaces=True):
     text = text.rstrip(invalid_filename_postfix)
     return text
 
-
+@tracer.start_as_current_span('atomically_save_image')
 def atomically_save_image():
     Image.MAX_IMAGE_PIXELS = None # disable check in Pillow and rely on check below to allow large custom image sizes
     while True:
@@ -126,7 +130,7 @@ save_queue = queue.Queue()
 save_thread = threading.Thread(target=atomically_save_image, daemon=True)
 save_thread.start()
 
-
+@tracer.start_as_current_span('save_image')
 def save_image(image,
                path=None,
                basename='',

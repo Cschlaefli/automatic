@@ -73,3 +73,6 @@ sentencepiece
 # block
 torch!=2.5.0
 torchvision!=0.20.0
+
+opentelemetry-api
+opentelemetry-sdk

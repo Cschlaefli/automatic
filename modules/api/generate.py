@@ -1,9 +1,13 @@
 from threading import Lock
 from fastapi.responses import JSONResponse
+
+from opentelemetry import trace
+
 from modules import errors, shared, scripts, ui
 from modules.api import models, script, helpers
 from modules.processing import StableDiffusionProcessingTxt2Img, StableDiffusionProcessingImg2Img, process_images
 
+tracer = trace.get_tracer("api.generate")
 
 errors.install()
 
@@ -83,6 +87,7 @@ class APIGenerate():
                     p.ip_adapter_masks.append([helpers.decode_base64_to_image(x) for x in ipadapter.masks])
             del request.ip_adapter
 
+    @tracer.start_as_current_span("post_text2img")
     def post_text2img(self, txt2imgreq: models.ReqTxt2Img):
         shared.log.debug(f"Received request: {txt2imgreq}")
         self.prepare_face_module(txt2imgreq)
@@ -128,6 +133,7 @@ class APIGenerate():
         info = processed.js() if processed else ''
         return models.ResTxt2Img(images=b64images, parameters=vars(txt2imgreq), info=info)
 
+    @tracer.start_as_current_span("post_img2img")
     def post_img2img(self, img2imgreq: models.ReqImg2Img):
         shared.log.debug(f"Received request: {img2imgreq}")
         self.prepare_face_module(img2imgreq)

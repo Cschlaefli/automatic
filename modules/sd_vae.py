@@ -2,8 +2,10 @@ import os
 import glob
 from copy import deepcopy
 import torch
+from opentelemetry import trace
 from modules import shared, errors, paths, devices, script_callbacks, sd_models, sd_detect
 
+tracer = trace.get_tracer("modules.sd_vae")
 
 vae_ignore_keys = {"model_ema.decay", "model_ema.num_updates"}
 vae_dict = {}
@@ -49,7 +51,7 @@ def get_filename(filepath):
     else:
         return os.path.basename(filepath)
 
-
+@tracer.start_as_current_span("refresh_vae_list")
 def refresh_vae_list():
     global vae_path # pylint: disable=global-statement
     vae_path = shared.opts.vae_dir
@@ -111,7 +113,7 @@ def find_vae_near_checkpoint(checkpoint_file):
             return vae_location
     return None
 
-
+@tracer.start_as_current_span("resolve_vae")
 def resolve_vae(checkpoint_file):
     if shared.opts.sd_vae == 'TAESD':
         return None, None
@@ -137,12 +139,13 @@ def resolve_vae(checkpoint_file):
     return None, None
 
 
+@tracer.start_as_current_span("load_vae_dict")
 def load_vae_dict(filename):
     vae_ckpt = sd_models.read_state_dict(filename, what='vae')
     vae_dict_1 = {k: v for k, v in vae_ckpt.items() if k[0:4] != "loss" and k not in vae_ignore_keys}
     return vae_dict_1
 
-
+@tracer.start_as_current_span("load_vae")
 def load_vae(model, vae_file=None, vae_source="unknown-source"):
     global loaded_vae_file # pylint: disable=global-statement
     if vae_file:
@@ -165,7 +168,7 @@ def load_vae(model, vae_file=None, vae_source="unknown-source"):
         restore_base_vae(model)
     loaded_vae_file = vae_file
 
-
+@tracer.start_as_current_span("apply_vae_config")
 def apply_vae_config(model_file, vae_file, sd_model):
     def get_vae_config():
         config_file = os.path.join(paths.sd_configs_path, os.path.splitext(os.path.basename(model_file))[0] + '_vae.json')
@@ -185,7 +188,7 @@ def apply_vae_config(model_file, vae_file, sd_model):
             if k in sd_model.vae.config and not k.startswith('_'):
                 sd_model.vae.config[k] = v
 
-
+@tracer.start_as_current_span("load_vae_diffusers")
 def load_vae_diffusers(model_file, vae_file=None, vae_source="unknown-source"):
     if vae_file is None:
         return None
@@ -243,6 +246,7 @@ def load_vae_diffusers(model_file, vae_file=None, vae_source="unknown-source"):
 
 
 # don't call this from outside
+@tracer.start_as_current_span("_load_vae_dict")
 def _load_vae_dict(model, vae_dict_1):
     model.first_stage_model.load_state_dict(vae_dict_1)
     model.first_stage_model.to(devices.dtype_vae)
@@ -255,7 +259,7 @@ def clear_loaded_vae():
 
 unspecified = object()
 
-
+@tracer.start_as_current_span("load_diffuser_file")
 def reload_vae_weights(sd_model=None, vae_file=unspecified):
     from modules import lowvram, sd_hijack
     if not sd_model:

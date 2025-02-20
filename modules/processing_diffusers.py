@@ -5,19 +5,23 @@ import numpy as np
 import torch
 import torchvision.transforms.functional as TF
 from PIL import Image
+
+from opentelemetry import trace
+
 from modules import shared, devices, processing, sd_models, errors, sd_hijack_hypertile, processing_vae, sd_models_compile, hidiffusion, timer, modelstats, extra_networks, ras
 from modules.processing_helpers import resize_hires, calculate_base_steps, calculate_hires_steps, calculate_refiner_steps, save_intermediate, update_sampler, is_txt2img, is_refiner_enabled, get_job_name
 from modules.processing_args import set_pipeline_args
 from modules.onnx_impl import preprocess_pipeline as preprocess_onnx_pipeline, check_parameters_changed as olive_check_parameters_changed
 from modules.lora import networks
 
+tracer = trace.get_tracer("modules.processing_diffusers")
 
 debug = shared.log.trace if os.environ.get('SD_DIFFUSERS_DEBUG', None) is not None else lambda *args, **kwargs: None
 debug('Trace: DIFFUSERS')
 last_p = None
 orig_pipeline = shared.sd_model
 
-
+@tracer.start_as_current_span("restore_state")
 def restore_state(p: processing.StableDiffusionProcessing):
     if p.state in ['reprocess_refine', 'reprocess_detail']:
         # validate
@@ -51,7 +55,7 @@ def restore_state(p: processing.StableDiffusionProcessing):
         shared.log.info(f'Restore state: op={p.state} skip={p.skip}')
     return p
 
-
+@tracer.start_as_current_span("process_base")
 def process_base(p: processing.StableDiffusionProcessing):
     txt2img = is_txt2img()
     use_refiner_start = txt2img and is_refiner_enabled(p) and not p.is_hr_pass and p.refiner_start > 0 and p.refiner_start < 1
@@ -149,7 +153,7 @@ def process_base(p: processing.StableDiffusionProcessing):
     shared.state.nextjob()
     return output
 
-
+@tracer.start_as_current_span("process_hires")
 def process_hires(p: processing.StableDiffusionProcessing, output):
     # optional second pass
     if (output is None) or (output.images is None):
@@ -257,7 +261,7 @@ def process_hires(p: processing.StableDiffusionProcessing, output):
         timer.process.record('hires')
     return output
 
-
+@tracer.start_as_current_span("process_refine")
 def process_refine(p: processing.StableDiffusionProcessing, output):
     # optional refiner pass or decode
     if (output is None) or (output.images is None):
@@ -343,7 +347,7 @@ def process_refine(p: processing.StableDiffusionProcessing, output):
         timer.process.record('refine')
     return output
 
-
+@tracer.start_as_current_span("process_decode")
 def process_decode(p: processing.StableDiffusionProcessing, output):
     shared.sd_model = sd_models.apply_balanced_offload(shared.sd_model, exclude=['vae'])
     if output is not None:
@@ -396,7 +400,7 @@ def process_decode(p: processing.StableDiffusionProcessing, output):
         results = []
     return results
 
-
+@tracer.start_as_current_span("update_pipeline")
 def update_pipeline(sd_model, p: processing.StableDiffusionProcessing):
     if sd_models.get_diffusers_task(sd_model) == sd_models.DiffusersTaskType.INPAINTING and getattr(p, 'image_mask', None) is None and p.task_args.get('image_mask', None) is None and getattr(p, 'mask', None) is None:
         shared.log.warning('Processing: mode=inpaint mask=None')
@@ -412,7 +416,7 @@ def update_pipeline(sd_model, p: processing.StableDiffusionProcessing):
         sd_models.set_diffusers_attention(sd_model)
     return sd_model
 
-
+@tracer.start_as_current_span("process_diffusers")
 def process_diffusers(p: processing.StableDiffusionProcessing):
     debug(f'Process diffusers args: {vars(p)}')
     results = []

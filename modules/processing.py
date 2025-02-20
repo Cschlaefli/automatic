@@ -4,6 +4,7 @@ import time
 from contextlib import nullcontext
 import numpy as np
 from PIL import Image, ImageOps
+from opentelemetry import trace
 from modules import shared, devices, errors, images, scripts, memstats, lowvram, script_callbacks, extra_networks, detailer, sd_models, sd_checkpoint, sd_vae, processing_helpers, timer, face_restoration, token_merge
 from modules.sd_hijack_hypertile import context_hypertile_vae, context_hypertile_unet
 from modules.processing_class import StableDiffusionProcessing, StableDiffusionProcessingTxt2Img, StableDiffusionProcessingImg2Img, StableDiffusionProcessingControl # pylint: disable=unused-import
@@ -11,6 +12,7 @@ from modules.processing_info import create_infotext
 from modules.modeldata import model_data
 from modules import pag
 
+tracer = trace.get_tracer("modules.processing")
 
 opt_C = 4
 opt_f = 8
@@ -122,6 +124,7 @@ class Processed:
         return f'{self.__class__.__name__}: {self.__dict__}'
 
 
+@tracer.start_as_current_span("process_images")
 def process_images(p: StableDiffusionProcessing) -> Processed:
     timer.process.reset()
     debug(f'Process images: {vars(p)}')
@@ -266,7 +269,7 @@ def process_init(p: StableDiffusionProcessing):
             p.negative_prompts = p.all_negative_prompts[p.iteration * p.batch_size:(p.iteration+1) * p.batch_size]
         p.prompts, _ = extra_networks.parse_prompts(p.prompts)
 
-
+@tracer.start_as_current_span("process_images_inner")
 def process_images_inner(p: StableDiffusionProcessing) -> Processed:
     """this is the main loop that both txt2img and img2img use; it calls func_init once inside all the scopes and func_sample once per batch"""
     if type(p.prompt) == list:

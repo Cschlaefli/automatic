@@ -3,6 +3,9 @@ import time
 import math
 import random
 import warnings
+
+from opentelemetry import trace
+
 from einops import repeat, rearrange
 import torch
 import numpy as np
@@ -17,6 +20,7 @@ debug = shared.log.trace if os.environ.get('SD_PROCESS_DEBUG', None) is not None
 debug_steps = shared.log.trace if os.environ.get('SD_STEPS_DEBUG', None) is not None else lambda *args, **kwargs: None
 debug_steps('Trace: STEPS')
 
+tracer = trace.get_tracer("modules.processing_helpers")
 
 def is_txt2img():
     return sd_models.get_diffusers_task(shared.sd_model) == sd_models.DiffusersTaskType.TEXT_2_IMAGE
@@ -31,7 +35,7 @@ def setup_color_correction(image):
     correction_target = cv2.cvtColor(np.asarray(image.copy()), cv2.COLOR_RGB2LAB)
     return correction_target
 
-
+@tracer.start_as_current_span("apply_color_correction")
 def apply_color_correction(correction, original_image):
     shared.log.debug(f"Applying color correction: correction={correction.shape} image={original_image}")
     np_image = np.asarray(original_image)
@@ -42,7 +46,7 @@ def apply_color_correction(correction, original_image):
     image = blendLayers(image, original_image, BlendType.LUMINOSITY)
     return image
 
-
+@tracer.start_as_current_span("apply_overlay")
 def apply_overlay(image: Image, paste_loc, index, overlays):
     if overlays is None or index >= len(overlays):
         return image
@@ -75,7 +79,7 @@ def create_binary_mask(image):
         image = image.convert('L')
     return image
 
-
+@tracer.start_as_current_span("images_tensor_to_samples")
 def images_tensor_to_samples(image, approximation=None, model=None): # pylint: disable=unused-argument
     if model is None:
         model = shared.sd_model
@@ -200,7 +204,7 @@ def create_random_tensors(shape, seeds, subseeds=None, subseed_strength=0.0, see
     x = torch.stack(xs).to(shared.device)
     return x
 
-
+@tracer.start_as_current_span("decode_first_stage")
 def decode_first_stage(model, x, full_quality=True):
     if not shared.opts.keep_incomplete and (shared.state.skipped or shared.state.interrupted):
         shared.log.debug(f'Decode VAE: skipped={shared.state.skipped} interrupted={shared.state.interrupted}')
@@ -403,7 +407,7 @@ def resize_init_images(p):
         return tgt_width, tgt_height
     return p.width, p.height
 
-
+@tracer.start_as_current_span("resize_hires")
 def resize_hires(p, latents): # input=latents output=pil if not latent_upscaler else latent
     if not torch.is_tensor(latents):
         shared.log.warning('Hires: input is not tensor')
@@ -525,7 +529,7 @@ def get_generator(p):
             generator = None
     return generator
 
-
+@tracer.start_as_current_span("set_latents")
 def set_latents(p):
     def dummy_prepare_latents(*args, **_kwargs):
         return args[0] # just return image to skip re-processing it
