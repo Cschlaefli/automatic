@@ -9,6 +9,7 @@ import diffusers
 import diffusers.loaders.single_file_utils
 import torch
 import huggingface_hub as hf
+from opentelemetry import trace
 from installer import log
 from modules import paths, shared, shared_state, shared_items, modelloader, devices, script_callbacks, sd_vae, sd_unet, errors, sd_models_compile, sd_hijack_accelerate, sd_detect, model_quant, sd_hijack_te
 from modules.timer import Timer, process as process_timer
@@ -18,6 +19,7 @@ from modules.sd_checkpoint import CheckpointInfo, select_checkpoint, list_models
 from modules.sd_offload import disable_offload, set_diffuser_offload, apply_balanced_offload, set_accelerate # pylint: disable=unused-import
 from modules.sd_models_utils import NoWatermark, get_signature, get_call, path_to_repo, patch_diffuser_config, convert_to_faketensors, read_state_dict, get_state_dict_from_checkpoint, apply_function_to_model # pylint: disable=unused-import
 
+tracer = trace.get_tracer("modules.sd_models")
 
 model_dir = "Stable-diffusion"
 model_path = os.path.abspath(os.path.join(paths.models_path, model_dir))
@@ -166,7 +168,7 @@ def set_diffuser_options(sd_model, vae=None, op:str='model', offload:bool=True, 
     if offload:
         set_diffuser_offload(sd_model, op, quiet)
 
-
+@tracer.start_as_current_span("move_model")
 def move_model(model, device=None, force=False):
     if model is None or device is None:
         return
@@ -443,7 +445,7 @@ def load_diffuser_folder(model_type, pipeline, checkpoint_info, diffusers_load_c
             return None
     return sd_model
 
-
+@tracer.start_as_current_span("load_diffuser_file")
 def load_diffuser_file(model_type, pipeline, checkpoint_info, diffusers_load_config, op='model'):
     sd_model = None
     diffusers_load_config["extract_ema"] = shared.opts.diffusers_extract_ema
@@ -523,6 +525,7 @@ def set_defaults(sd_model, checkpoint_info):
         sd_model.set_progress_bar_config(bar_format='Progress {rate_fmt}{postfix} {bar} {percentage:3.0f}% {n_fmt}/{total_fmt} {elapsed} {remaining}', ncols=80, colour='#327fba')
 
 
+@tracer.start_as_current_span("load_diffuser")
 def load_diffuser(checkpoint_info=None, timer=None, op='model', revision=None): # pylint: disable=unused-argument
     if timer is None:
         timer = Timer()
@@ -920,7 +923,7 @@ def set_diffuser_pipe(pipe, new_pipe_type):
     pipe = new_pipe
     return pipe
 
-
+@tracer.start_as_current_span("set_diffusers_attention")
 def set_diffusers_attention(pipe, quiet:bool=False):
     import diffusers.models.attention_processor as p
 
@@ -997,6 +1000,7 @@ def get_native(pipe: diffusers.DiffusionPipeline):
     return size
 
 
+@tracer.start_as_current_span("reload_text_encoder")
 def reload_text_encoder(initial=False):
     if initial and (shared.opts.sd_text_encoder is None or shared.opts.sd_text_encoder == 'Default'):
         return # dont unload
@@ -1015,6 +1019,7 @@ def reload_text_encoder(initial=False):
         set_t5(pipe=shared.sd_model, module='text_encoder_3', t5=shared.opts.sd_text_encoder, cache_dir=shared.opts.diffusers_dir)
 
 
+@tracer.start_as_current_span("reload_model_weights")
 def reload_model_weights(sd_model=None, info=None, op='model', force=False, revision=None):
     checkpoint_info = info or select_checkpoint(op=op) # are we selecting model or dictionary
     if checkpoint_info is None:
@@ -1064,6 +1069,7 @@ def clear_caches():
     memstats.reset_stats()
 
 
+@tracer.start_as_current_span("unload_model_weights")
 def unload_model_weights(op='model'):
     clear_caches()
     if shared.compiled_model_state is not None:
