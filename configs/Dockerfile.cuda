@@ -27,11 +27,11 @@ RUN ["/usr/sbin/ldconfig"]
 COPY . /app
 WORKDIR /app
 
-ARG USE_CACHE=false
+ARG NO_CACHE=false
 
 # stop pip and uv from caching unless build arg is set
-ENV PIP_NO_CACHE_DIR=$USE_CACHE \
-    UV_NO_CACHE=$USE_CACHE
+ENV PIP_NO_CACHE_DIR=$NO_CACHE \
+    UV_NO_CACHE=$NO_CACHE
 ENV PIP_ROOT_USER_ACTION=ignore
 # disable model hashing for faster startup
 ENV SD_NOHASHING=true
