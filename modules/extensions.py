@@ -4,21 +4,6 @@ import git
 from modules import shared, errors
 from modules.paths import extensions_dir, extensions_builtin_dir
 
-
-extensions = []
-if not os.path.exists(extensions_dir):
-    os.makedirs(extensions_dir)
-
-
-def active():
-    if shared.opts.disable_all_extensions == "all":
-        return []
-    elif shared.opts.disable_all_extensions == "user":
-        return [x for x in extensions if x.enabled and x.is_builtin]
-    else:
-        return [x for x in extensions if x.enabled]
-
-
 class Extension:
     def __init__(self, name, path, enabled=True, is_builtin=False):
         self.name = name
@@ -39,6 +24,9 @@ class Extension:
         self.ctime = 0
 
     def read_info(self, force=False):
+        ''' Read extension info from git repository
+        :param force: Force to refetch info from git repository
+        '''
         if self.have_info_from_repo and not force:
             return
         self.have_info_from_repo = True
@@ -128,6 +116,17 @@ class Extension:
         repo.git.reset(commit, hard=True)
         self.have_info_from_repo = False
 
+extensions : list[Extension] = []
+if not os.path.exists(extensions_dir):
+    os.makedirs(extensions_dir)
+
+def active():
+    if shared.opts.disable_all_extensions == "all":
+        return []
+    elif shared.opts.disable_all_extensions == "user":
+        return [x for x in extensions if x.enabled and x.is_builtin]
+    else:
+        return [x for x in extensions if x.enabled]
 
 def list_extensions():
     extensions.clear()

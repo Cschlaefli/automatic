@@ -28,8 +28,8 @@ class Script(scripts.Script):
         return shared.native
 
     def dependencies(self):
-        from installer import install, installed, reload
-        if not installed('insightface==0.7.3', reload=False, quiet=True):
+        from installer import install, installed
+        if not installed('insightface', reload=False, quiet=True):
             install('insightface==0.7.3', ignore=False)
             install('albumentations==1.4.3', ignore=False, reinstall=True)
 

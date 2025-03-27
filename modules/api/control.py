@@ -236,7 +236,7 @@ class APIControl():
             "inputs": [helpers.decode_base64_to_image(x) for x in req.inputs] if req.inputs else None,
             "inits": [helpers.decode_base64_to_image(x) for x in req.inits] if req.inits else None,
             "mask": helpers.decode_base64_to_image(req.mask) if req.mask else None,
-        }) # since this doesn't trigger revalidating the model, this still works
+        }) # since this doesn't validate the model, this works fine
 
         args = self.sanitize_args(args)
         send_images = args.pop('send_images', True)

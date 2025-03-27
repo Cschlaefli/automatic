@@ -5,6 +5,7 @@ import json
 import time
 import shutil
 import locale
+import socket
 import logging
 import platform
 import subprocess
@@ -26,6 +27,7 @@ console = None
 debug = log.debug if os.environ.get('SD_INSTALL_DEBUG', None) is not None else lambda *args, **kwargs: None
 pip_log = '--log pip.log ' if os.environ.get('SD_PIP_DEBUG', None) is not None else ''
 log_file = os.path.join(os.path.dirname(__file__), 'sdnext.log')
+hostname = socket.gethostname()
 log_rolled = False
 first_call = True
 quick_allowed = True
@@ -54,11 +56,16 @@ args = Dot({
 })
 git_commit = "unknown"
 diffusers_commit = "unknown"
-extensions_commit = {
+extensions_commit = { # force specific commit for extensions
     'sd-webui-controlnet': 'ecd33eb',
     'adetailer': 'a89c01d'
     # 'stable-diffusion-webui-images-browser': '27fe4a7',
 }
+control_extensions = [ # 3rd party extensions marked as safe for control ui
+    'NudeNet',
+    'IP Adapters',
+    'Remove background',
+]
 
 
 try:
@@ -84,7 +91,6 @@ def install_traceback(suppress: list = []):
         extra_lines=os.environ.get('SD_TRACELINES', 1),
         max_frames=os.environ.get('SD_TRACEFRAMES', 16),
         width=os.environ.get('SD_TRACEWIDTH', console.width),
-        code_width=os.environ.get('SD_TRACEWIDTH', console.width) - 12,
         word_wrap=os.environ.get('SD_TRACEWRAP', False),
         indent_guides=os.environ.get('SD_TRACEINDENT', False),
         show_locals=os.environ.get('SD_TRACELOCALS', False),
@@ -177,7 +183,7 @@ def setup_logging():
             fh.doRollover()
             log_rolled = True
 
-        fh.formatter = logging.Formatter('%(asctime)s | %(name)s | %(levelname)s | %(module)s | %(message)s')
+        fh.formatter = logging.Formatter(f'%(asctime)s | {hostname} | %(name)s | %(levelname)s | %(module)s | %(message)s')
         fh.setLevel(logging.DEBUG)
         log.addHandler(fh)
 
@@ -206,7 +212,7 @@ def get_logfile():
     if args.log_stdout:
         return None
     log_size = os.path.getsize(log_file) if os.path.exists(log_file) else 0
-    log.info(f'Logger: file="{log_file}" level={logging.getLevelName(logging.DEBUG if args.debug else logging.INFO)} size={log_size} mode={"append" if not log_rolled else "create"}')
+    log.info(f'Logger: file="{os.path.abspath(log_file)}" level={logging.getLevelName(logging.DEBUG if args.debug else logging.INFO)} host="{hostname}" size={log_size} mode={"append" if not log_rolled else "create"}')
     return log_file
 
 
@@ -664,11 +670,11 @@ def install_rocm_zluda():
 
         if args.use_nightly:
             if rocm.version is None or float(rocm.version) >= 6.3: # assume the latest if version check fails
-                torch_command = os.environ.get('TORCH_COMMAND', '--pre torch torchvision --index-url https://download.pytorch.org/whl/nightly/rocm6.3')
+                torch_command = os.environ.get('TORCH_COMMAND', '--upgrade --pre torch torchvision --index-url https://download.pytorch.org/whl/nightly/rocm6.3')
             elif rocm.version == "6.2": # use rocm 6.2.4 instead of 6.2 as torch+rocm6.2 doesn't exists
-                torch_command = os.environ.get('TORCH_COMMAND', '--pre torch torchvision --index-url https://download.pytorch.org/whl/nightly/rocm6.2.4')
+                torch_command = os.environ.get('TORCH_COMMAND', '--upgrade --pre torch torchvision --index-url https://download.pytorch.org/whl/nightly/rocm6.2.4')
             else: # oldest rocm version on nightly is 6.1
-                torch_command = os.environ.get('TORCH_COMMAND', '--pre torch torchvision --index-url https://download.pytorch.org/whl/nightly/rocm6.1')
+                torch_command = os.environ.get('TORCH_COMMAND', '--upgrade --pre torch torchvision --index-url https://download.pytorch.org/whl/nightly/rocm6.1')
         else:
             if rocm.version is None or float(rocm.version) >= 6.2: # assume the latest if version check fails
                 # use rocm 6.2.4 instead of 6.2 as torch==2.6.0+rocm6.2 doesn't exists
@@ -711,23 +717,28 @@ def install_ipex(torch_command):
 
     if os.environ.get("NEOReadDebugKeys", None) is None:
         os.environ.setdefault('NEOReadDebugKeys', '1')
+
     if os.environ.get("ClDeviceGlobalMemSizeAvailablePercent", None) is None:
         os.environ.setdefault('ClDeviceGlobalMemSizeAvailablePercent', '100')
+
     if os.environ.get("SYCL_CACHE_PERSISTENT", None) is None:
         os.environ.setdefault('SYCL_CACHE_PERSISTENT', '1') # Jit cache
 
     if os.environ.get("PYTORCH_ENABLE_XPU_FALLBACK", None) is None:
         os.environ.setdefault('PYTORCH_ENABLE_XPU_FALLBACK', '1') # CPU fallback for unsupported ops
-    if os.environ.get("OverrideDefaultFP64Settings", None) is None:
-        os.environ.setdefault('OverrideDefaultFP64Settings', '1')
-    if os.environ.get("IGC_EnableDPEmulation", None) is None:
-        os.environ.setdefault('IGC_EnableDPEmulation', '1') # FP64 Emulation
+
     if os.environ.get('IPEX_FORCE_ATTENTION_SLICE', None) is None:
         # XPU PyTorch doesn't support Flash Atten or Memory Atten yet so Battlemage goes OOM without this
         os.environ.setdefault('IPEX_FORCE_ATTENTION_SLICE', '1')
 
+    # FP64 emulation causes random UR Errors
+    #if os.environ.get("OverrideDefaultFP64Settings", None) is None:
+    #    os.environ.setdefault('OverrideDefaultFP64Settings', '1')
+    #if os.environ.get("IGC_EnableDPEmulation", None) is None:
+    #    os.environ.setdefault('IGC_EnableDPEmulation', '1') # FP64 Emulation
+
     if args.use_nightly:
-        torch_command = os.environ.get('TORCH_COMMAND', '--pre torch torchvision --index-url https://download.pytorch.org/whl/nightly/xpu')
+        torch_command = os.environ.get('TORCH_COMMAND', '--upgrade --pre torch torchvision --index-url https://download.pytorch.org/whl/nightly/xpu')
     else:
         torch_command = os.environ.get('TORCH_COMMAND', 'torch==2.6.0+xpu torchvision==0.21.0+xpu --index-url https://download.pytorch.org/whl/xpu')
 
@@ -982,14 +993,13 @@ def run_extension_installer(folder):
 
 # get list of all enabled extensions
 def list_extensions_folder(folder, quiet=False):
-    name = os.path.basename(folder)
     disabled_extensions_all = opts.get('disable_all_extensions', 'none')
     if disabled_extensions_all != 'none':
         return []
     disabled_extensions = opts.get('disabled_extensions', [])
     enabled_extensions = [x for x in os.listdir(folder) if os.path.isdir(os.path.join(folder, x)) and x not in disabled_extensions and not x.startswith('.')]
     if not quiet:
-        log.info(f'Extensions: enabled={enabled_extensions} {name}')
+        log.info(f'Extensions: path="{folder}" enabled={enabled_extensions}')
     return enabled_extensions
 
 

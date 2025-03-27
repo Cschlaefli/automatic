@@ -1,5 +1,54 @@
 # Change Log for SD.Next
 
+## Update for 2025-03-14
+
+- fix installer not starting when older version of rich is installed  
+- fix circular imports when debug flags are enabled  
+- fix cuda errors with directml  
+- fix memory stats not displaying the ram usage  
+- fix runpod memory limit reporting  
+- fix remote vae not being stored in metadata, thanks @iDeNoh  
+- add --upgrade to torch_command when using --use-nightly for ipex and rocm  
+- **ipex**
+  - add xpu to profiler  
+  - fix untyped_storage, torch.eye and torch.cuda.device ops  
+  - fix torch 2.7 compatibility  
+  - fix performance with balanced offload  
+  - fix triton and torch.compile  
+
+## Update for 2025-02-28
+
+Primarily a hotfix/service release plus few UI improvements and one exciting new feature: Remote-VAE!
+
+- **Remote Decode**  
+  - final step of image generate, VAE decode, is by far the most memory intensive operation and can easily result in out-of-memory errors  
+    what can be done? Well, *Huggingface* is now providing *free-of-charge* **remote-VAE-decode** service!  
+  - how to use? previous *Full quality* option in UI is replaced with VAE type selector: *Full, Tiny, Remote*  
+    currently supports SD15, SDXL and FLUX.1 with more models expected in the near future  
+    depending on your bandwidth select mode in *settings -> vae -> raw/png/jpg*  
+    if remote processing fails SD.Next will fallback to using normal VAE decode process  
+    *privacy note*: only passed item is final latent itself without any user or generate information and latent is not stored in the cloud  
+- **UI**
+  - modern ui reorg main tab  
+    improve styling, improve scripts/extensions interface and separate ipadapters  
+  - additional ui hints  
+- **Other**  
+  - add `--extensions-dir` cli arg and `SD_EXTENSIONSDIR` env variable to specify extensions directory  
+  - update `zluda==3.9.0`
+- **Fixes**  
+  - skip trying to register legacy/incompatibile extensions in control ui  
+  - add additional scripts/extensions callbacks  
+  - remove ui splash screen on auth fail  
+  - log full config path, full log path, system name, extensions path
+  - zluda hotfixes  
+  - zluda force sync  
+  - fix torch import on compile  
+  - infotext parser force delimiter before params  
+  - handle pipeline class switch errors  
+  - improve extensions options compatibility  
+  - fix flux on ipex  
+  - disable fp64 emulation on ipex  
+
 ## Update for 2025-02-18
 
 ### Highlight for 2025-02-18
@@ -7,19 +56,21 @@
 We're back with another update with nearly 100 commits!  
 - Starting with massive UI update with full [localization](https://vladmandic.github.io/sdnext-docs/Locale/) for 8 languages  
   and 100+ new [hints](https://vladmandic.github.io/sdnext-docs/Hints/)  
-- Big update to [Docker](https://vladmandic.github.io/sdnext-docs/Docker/) containers with support for all major compute platforms  
+- Big update to [Docker](https://vladmandic.github.io/sdnext-docs/Docker/) containers  
+  with support for all major compute platforms  
 - A lot of [outpainting](https://vladmandic.github.io/sdnext-docs/Outpaint/) goodies  
 - Support for new models: [AlphaVLLM Lumina 2](https://github.com/Alpha-VLLM/Lumina-Image-2.0) and [Ostris Flex.1-Alpha](https://huggingface.co/ostris/Flex.1-alpha)  
-- And new **Mixture-of-Diffusers** regional tiling pipeline  
+- And new **Mixture-of-Diffusers** regional prompting & tiling pipeline  
 - Follow-up to last weeks **interrogate/captioning** rewrite  
   now with redesigned captioning UI, batch support, and much more  
   plus **JoyTag**, **JoyCaption**, **PaliGemma**, **ToriiGate**, **Ovis2** added to list of supported models  
-- Some changes to **prompt parsing** to allow more control as well as more flexibility when mouting SDNext server to custom URL  
+- Some changes to **prompt parsing** to allow more control as well as  
+  more flexibility when mouting SDNext server to custom URL  
 - Of course, cumulative fixes...  
 
 *...and more* - see [changelog](https://github.com/vladmandic/sdnext/blob/dev/CHANGELOG.md) for full details!  
 
-### Details for 2025-02-18
+### Details for 2025-02-20
 
 - **User Interface**  
   - **Hints**  

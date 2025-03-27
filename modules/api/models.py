@@ -394,7 +394,6 @@ class ResScripts(BaseModel):
     txt2img: list = Field(default_factory=list, title="Txt2img", description="Titles of scripts (txt2img)")
     img2img: list = Field(default_factory=list, title="Img2img", description="Titles of scripts (img2img)")
     control: list = Field(default_factory=list, title="Control", description="Titles of scripts (control)")
-    postprocessing: list = Field(default_factory=list, title="Postprocessing", description="Titles of scripts (postprocessing)")
 
 class ResNVML(BaseModel): # definition of http response
     name: str = Field(title="Name")

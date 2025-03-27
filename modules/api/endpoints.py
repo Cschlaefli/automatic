@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, List
 from fastapi.exceptions import HTTPException
 from modules import shared
 from modules.api import models, helpers
@@ -137,23 +137,14 @@ def post_refresh_loras():
     from modules.lora import networks
     return networks.list_available_networks()
 
-def get_extensions_list():
+def get_extensions_list() -> List[models.ItemExtension]:
     from modules import extensions
     extensions.list_extensions()
     ext_list = []
     for ext in extensions.extensions:
-        ext: extensions.Extension
         ext.read_info()
-        if ext.remote is not None:
-            ext_list.append({
-                "name": ext.name,
-                "remote": ext.remote,
-                "branch": ext.branch,
-                "commit_hash":ext.commit_hash,
-                "commit_date":ext.commit_date,
-                "version":ext.version,
-                "enabled":ext.enabled
-            })
+        if ext.remote:
+            ext_list.append(models.ItemExtension(**ext.__dict__))
     return ext_list
 
 def post_pnginfo(req: models.ReqImageInfo):
