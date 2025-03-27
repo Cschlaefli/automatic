@@ -49,7 +49,7 @@ def process_original(p: processing.StableDiffusionProcessing):
     c = get_conds_with_caching(prompt_parser.get_multicond_learned_conditioning, p.prompts, p.steps * step_multiplier, cached_c)
     with devices.without_autocast() if devices.unet_needs_upcast else devices.autocast():
         samples_ddim = p.sample(conditioning=c, unconditional_conditioning=uc, seeds=p.seeds, subseeds=p.subseeds, subseed_strength=p.subseed_strength, prompts=p.prompts)
-    x_samples_ddim = [processing.decode_first_stage(p.sd_model, samples_ddim[i:i+1].to(dtype=devices.dtype_vae), p.full_quality)[0].cpu() for i in range(samples_ddim.size(0))]
+    x_samples_ddim = [processing.decode_first_stage(p.sd_model, samples_ddim[i:i+1].to(dtype=devices.dtype_vae))[0].cpu() for i in range(samples_ddim.size(0))]
     try:
         for x in x_samples_ddim:
             devices.test_for_nans(x, "vae")
@@ -60,7 +60,7 @@ def process_original(p: processing.StableDiffusionProcessing):
             devices.dtype_vae = torch.bfloat16
             vae_file, vae_source = sd_vae.resolve_vae(p.sd_model.sd_model_checkpoint)
             sd_vae.load_vae(p.sd_model, vae_file, vae_source)
-            x_samples_ddim = [processing.decode_first_stage(p.sd_model, samples_ddim[i:i+1].to(dtype=devices.dtype_vae), p.full_quality)[0].cpu() for i in range(samples_ddim.size(0))]
+            x_samples_ddim = [processing.decode_first_stage(p.sd_model, samples_ddim[i:i+1].to(dtype=devices.dtype_vae))[0].cpu() for i in range(samples_ddim.size(0))]
             for x in x_samples_ddim:
                 devices.test_for_nans(x, "vae")
         else:
@@ -72,14 +72,6 @@ def process_original(p: processing.StableDiffusionProcessing):
 
 
 def sample_txt2img(p: processing.StableDiffusionProcessingTxt2Img, conditioning, unconditional_conditioning, seeds, subseeds, subseed_strength, prompts):
-    latent_scale_mode = shared.latent_upscale_modes.get(p.hr_upscaler, None) if p.hr_upscaler is not None else shared.latent_upscale_modes.get(shared.latent_upscale_default_mode, "None")
-    if latent_scale_mode is not None:
-        p.hr_force = False # no need to force anything
-    if p.enable_hr and (latent_scale_mode is None or p.hr_force):
-        if len([x for x in shared.sd_upscalers if x.name == p.hr_upscaler]) == 0:
-            shared.log.warning(f"HiRes: upscaler={p.hr_upscaler} unknown")
-            p.enable_hr = False
-
     p.ops.append('txt2img')
     hypertile_set(p)
     p.sampler = sd_samplers.create_sampler(p.sampler_name, p.sd_model)
@@ -98,7 +90,7 @@ def sample_txt2img(p: processing.StableDiffusionProcessingTxt2Img, conditioning,
         target_height = p.hr_upscale_to_y
         decoded_samples = None
         if shared.opts.samples_save and shared.opts.save_images_before_highres_fix and not p.do_not_save_samples:
-            decoded_samples = decode_first_stage(p.sd_model, samples.to(dtype=devices.dtype_vae), p.full_quality)
+            decoded_samples = decode_first_stage(p.sd_model, samples.to(dtype=devices.dtype_vae))
             decoded_samples = torch.clamp((decoded_samples + 1.0) / 2.0, min=0.0, max=1.0)
             for i, x_sample in enumerate(decoded_samples):
                 x_sample = validate_sample(x_sample)
@@ -109,10 +101,19 @@ def sample_txt2img(p: processing.StableDiffusionProcessingTxt2Img, conditioning,
                 info = processing.create_infotext(p, p.all_prompts, p.all_seeds, p.all_subseeds, [], iteration=p.iteration, position_in_batch=i)
                 p.extra_generation_params, p.detailer_enabled = orig_extra_generation_params, orig_detailer
                 images.save_image(image, p.outpath_samples, "", seeds[i], prompts[i], shared.opts.samples_format, info=info, suffix="-before-hires")
-        if latent_scale_mode is None or p.hr_force: # non-latent upscaling
+
+        if p.hr_upscaler.lower().startswith('latent'): # non-latent upscaling
+            p.hr_force = True
+            shared.state.job = 'Upscale'
+            samples = images.resize_image(1, samples, target_width, target_height, upscaler_name=p.hr_upscaler)
+            if getattr(p, "inpainting_mask_weight", shared.opts.inpainting_mask_weight) < 1.0:
+                image_conditioning = img2img_image_conditioning(p, decode_first_stage(p.sd_model, samples.to(dtype=devices.dtype_vae)), samples)
+            else:
+                image_conditioning = txt2img_image_conditioning(p, samples.to(dtype=devices.dtype_vae))
+        else:
             shared.state.job = 'Upscale'
             if decoded_samples is None:
-                decoded_samples = decode_first_stage(p.sd_model, samples.to(dtype=devices.dtype_vae), p.full_quality)
+                decoded_samples = decode_first_stage(p.sd_model, samples.to(dtype=devices.dtype_vae))
                 decoded_samples = torch.clamp((decoded_samples + 1.0) / 2.0, min=0.0, max=1.0)
             batch_images = []
             for _i, x_sample in enumerate(decoded_samples):
@@ -130,15 +131,8 @@ def sample_txt2img(p: processing.StableDiffusionProcessingTxt2Img, conditioning,
             else:
                 samples = p.sd_model.get_first_stage_encoding(p.sd_model.encode_first_stage(resized_samples))
             image_conditioning = img2img_image_conditioning(p, resized_samples, samples)
-        else:
-            samples = torch.nn.functional.interpolate(samples, size=(target_height // 8, target_width // 8), mode=latent_scale_mode["mode"], antialias=latent_scale_mode["antialias"])
-            if getattr(p, "inpainting_mask_weight", shared.opts.inpainting_mask_weight) < 1.0:
-                image_conditioning = img2img_image_conditioning(p, decode_first_stage(p.sd_model, samples.to(dtype=devices.dtype_vae), p.full_quality), samples)
-            else:
-                image_conditioning = txt2img_image_conditioning(p, samples.to(dtype=devices.dtype_vae))
-            if p.hr_sampler_name == "PLMS":
-                p.hr_sampler_name = 'UniPC'
-        if p.hr_force or latent_scale_mode is not None:
+
+        if p.hr_force:
             shared.state.job = 'HiRes'
             if p.denoising_strength > 0:
                 p.ops.append('hires')

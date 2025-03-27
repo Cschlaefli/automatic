@@ -201,7 +201,7 @@ def create_random_tensors(shape, seeds, subseeds=None, subseed_strength=0.0, see
     return x
 
 
-def decode_first_stage(model, x, full_quality=True):
+def decode_first_stage(model, x):
     if not shared.opts.keep_incomplete and (shared.state.skipped or shared.state.interrupted):
         shared.log.debug(f'Decode VAE: skipped={shared.state.skipped} interrupted={shared.state.interrupted}')
         x_sample = torch.zeros((len(x), 3, x.shape[2] * 8, x.shape[3] * 8), dtype=devices.dtype_vae, device=devices.device)
@@ -210,20 +210,14 @@ def decode_first_stage(model, x, full_quality=True):
     shared.state.job = 'VAE'
     with devices.autocast(disable = x.dtype==devices.dtype_vae):
         try:
-            if full_quality:
-                if hasattr(model, 'decode_first_stage'):
-                    # x_sample = model.decode_first_stage(x) * 0.5 + 0.5
-                    x_sample = model.decode_first_stage(x)
-                elif hasattr(model, 'vae'):
-                    x_sample = processing_vae.vae_decode(latents=x, model=model, output_type='np', full_quality=full_quality)
-                else:
-                    x_sample = x
-                    shared.log.error('Decode VAE unknown model')
+            if hasattr(model, 'decode_first_stage'):
+                # x_sample = model.decode_first_stage(x) * 0.5 + 0.5
+                x_sample = model.decode_first_stage(x)
+            elif hasattr(model, 'vae'):
+                x_sample = processing_vae.vae_decode(latents=x, model=model, output_type='np')
             else:
-                from modules import sd_vae_taesd
-                x_sample = torch.zeros((len(x), 3, x.shape[2] * 8, x.shape[3] * 8), dtype=devices.dtype_vae, device=devices.device)
-                for i in range(len(x_sample)):
-                    x_sample[i] = sd_vae_taesd.decode(x[i]) * 0.5 + 0.5
+                x_sample = x
+                shared.log.error('Decode VAE unknown model')
         except Exception as e:
             x_sample = x
             shared.log.error(f'Decode VAE: {e}')
@@ -407,28 +401,29 @@ def resize_init_images(p):
 def resize_hires(p, latents): # input=latents output=pil if not latent_upscaler else latent
     if not torch.is_tensor(latents):
         shared.log.warning('Hires: input is not tensor')
-        first_pass_images = processing_vae.vae_decode(latents=latents, model=shared.sd_model, full_quality=p.full_quality, output_type='pil', width=p.width, height=p.height)
+        first_pass_images = processing_vae.vae_decode(latents=latents, model=shared.sd_model, vae_type=p.vae_type, output_type='pil', width=p.width, height=p.height)
         return first_pass_images
-    latent_upscaler = shared.latent_upscale_modes.get(p.hr_upscaler, None)
-    # shared.log.info(f'Hires: upscaler={p.hr_upscaler} width={p.hr_upscale_to_x} height={p.hr_upscale_to_y} images={latents.shape[0]}')
-    if latent_upscaler is not None:
-        return torch.nn.functional.interpolate(latents, size=(p.hr_upscale_to_y // 8, p.hr_upscale_to_x // 8), mode=latent_upscaler["mode"], antialias=latent_upscaler["antialias"])
-    first_pass_images = processing_vae.vae_decode(latents=latents, model=shared.sd_model, full_quality=p.full_quality, output_type='pil', width=p.width, height=p.height)
-    if p.hr_upscale_to_x == 0 or (p.hr_upscale_to_y == 0 and hasattr(p, 'init_hr')):
+
+    if (p.hr_upscale_to_x == 0 or p.hr_upscale_to_y == 0) and hasattr(p, 'init_hr'):
         shared.log.error('Hires: missing upscaling dimensions')
         return first_pass_images
+
+    if p.hr_upscaler.lower().startswith('latent'):
+        resized_image = images.resize_image(p.hr_resize_mode, latents, p.hr_upscale_to_x, p.hr_upscale_to_y, upscaler_name=p.hr_upscaler, context=p.hr_resize_context)
+        return resized_image
+
+    first_pass_images = processing_vae.vae_decode(latents=latents, model=shared.sd_model, vae_type=p.vae_type, output_type='pil', width=p.width, height=p.height)
     resized_images = []
     for img in first_pass_images:
-        if latent_upscaler is None:
-            resized_image = images.resize_image(p.hr_resize_mode, img, p.hr_upscale_to_x, p.hr_upscale_to_y, upscaler_name=p.hr_upscaler, context=p.hr_resize_context)
-        else:
-            resized_image = img
+        resized_image = images.resize_image(p.hr_resize_mode, img, p.hr_upscale_to_x, p.hr_upscale_to_y, upscaler_name=p.hr_upscaler, context=p.hr_resize_context)
         resized_images.append(resized_image)
     devices.torch_gc()
     return resized_images
 
 
 def fix_prompts(p, prompts, negative_prompts, prompts_2, negative_prompts_2):
+    if hasattr(p, 'keep_prompts'):
+        return prompts, negative_prompts, prompts_2, negative_prompts_2
     if type(prompts) is str:
         prompts = [prompts]
     if type(negative_prompts) is str:
@@ -560,7 +555,7 @@ def save_intermediate(p, latents, suffix):
     for i in range(len(latents)):
         from modules.processing import create_infotext
         info=create_infotext(p, p.all_prompts, p.all_seeds, p.all_subseeds, [], iteration=p.iteration, position_in_batch=i)
-        decoded = processing_vae.vae_decode(latents=latents, model=shared.sd_model, output_type='pil', full_quality=p.full_quality, width=p.width, height=p.height)
+        decoded = processing_vae.vae_decode(latents=latents, model=shared.sd_model, output_type='pil', vae_type=p.vae_type, width=p.width, height=p.height)
         for j in range(len(decoded)):
             images.save_image(decoded[j], path=p.outpath_samples, basename="", seed=p.seeds[i], prompt=p.prompts[i], extension=shared.opts.samples_format, info=info, p=p, suffix=suffix)
 

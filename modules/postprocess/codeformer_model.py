@@ -4,7 +4,7 @@ import torch
 import modules.detailer
 from modules import shared, devices, modelloader, errors
 from modules.paths import models_path
-from installer import install
+
 
 # codeformer people made a choice to include modified basicsr library to their project which makes
 # it utterly impossible to use it alongside with other libraries that also use basicsr, like GFPGAN.
@@ -103,7 +103,7 @@ def setup_model(dirname):
                 restored_img = self.face_helper.paste_faces_to_input_image()
                 restored_img = restored_img[:, :, ::-1]
                 if original_resolution != restored_img.shape[0:2]:
-                    restored_img = cv2.resize(restored_img, (0, 0), fx=original_resolution[1]/restored_img.shape[1], fy=original_resolution[0]/restored_img.shape[0], interpolation=cv2.INTER_LINEAR)
+                    restored_img = cv2.resize(restored_img, (0, 0), fx=original_resolution[1]/restored_img.shape[1], fy=original_resolution[0]/restored_img.shape[0], interpolation=cv2.INTER_LANCZOS4)
                 self.face_helper.clean_all()
                 if shared.opts.detailer_unload:
                     self.send_model_to(devices.cpu)

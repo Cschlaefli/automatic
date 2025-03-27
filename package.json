@@ -1,23 +1,24 @@
 {
-  "name": "@vladmandic/automatic",
+  "name": "@vladmandic/sdnext",
   "version": "dev",
   "description": "SD.Next: Opinionated implementation of Stable Diffusion",
   "author": "Vladimir Mandic <mandic00@live.com>",
   "bugs": {
-    "url": "https://github.com/vladmandic/automatic/issues"
+    "url": "https://github.com/vladmandic/sdnext/issues"
   },
-  "homepage": "https://github.com/vladmandic/automatic",
+  "homepage": "https://github.com/vladmandic/sdnext",
   "license": "Apache-2.0",
   "engines": {
     "node": ">=14.0.0"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/vladmandic/automatic.git"
+    "url": "git+https://github.com/vladmandic/sdnext.git"
   },
   "scripts": {
     "venv": ". venv/bin/activate",
     "start": "npm run venv; python launch.py --debug",
+    "localize": "node cli/localize.js",
     "ruff": ". venv/bin/activate && ruff check",
     "eslint": "eslint javascript/ extensions-builtin/sdnext-modernui/javascript/",
     "pylint": ". venv/bin/activate && pylint *.py modules/ extensions-builtin/ | grep -v '^*'",
@@ -28,6 +29,7 @@
     "esbuild": "^0.18.15"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.21.0",
     "argparse": "^2.0.1",
     "eslint": "^8.57.0",
     "eslint-config-airbnb-base": "^15.0.0",

@@ -148,7 +148,9 @@ def check_active(p, unit_type, units):
             active_end.append(float(u.end))
             p.guess_mode = u.guess
             if isinstance(u.mode, str):
-                p.control_mode = u.choices.index(u.mode) if u.mode in u.choices else 0
+                if not hasattr(p, 'control_mode'):
+                    p.control_mode = []
+                p.control_mode.append(u.choices.index(u.mode) if u.mode in u.choices else 0)
                 p.is_tile = p.is_tile or 'tile' in u.mode.lower()
                 p.control_tile = u.tile
                 p.extra_generation_params["Control mode"] = u.mode
@@ -175,7 +177,7 @@ def check_active(p, unit_type, units):
         else:
             if u.process.processor_id is not None:
                 active_process.append(u.process)
-            shared.log.debug(f'Control process unit: i={num_units} process={u.process.processor_id}')
+                shared.log.debug(f'Control process unit: i={num_units} process={u.process.processor_id}')
             active_strength.append(float(u.strength))
     debug_log(f'Control active: process={len(active_process)} model={len(active_model)}')
     return active_process, active_model, active_strength, active_start, active_end
@@ -226,7 +228,7 @@ def control_run(state: str = '',
                 steps: int = 20, sampler_index: int = None,
                 seed: int = -1, subseed: int = -1, subseed_strength: float = 0, seed_resize_from_h: int = -1, seed_resize_from_w: int = -1,
                 cfg_scale: float = 6.0, clip_skip: float = 1.0, image_cfg_scale: float = 6.0, diffusers_guidance_rescale: float = 0.7, pag_scale: float = 0.0, pag_adaptive: float = 0.5, cfg_end: float = 1.0,
-                full_quality: bool = True, tiling: bool = False, hidiffusion: bool = False,
+                vae_type: str = 'Full', tiling: bool = False, hidiffusion: bool = False,
                 detailer_enabled: bool = True, detailer_prompt: str = '', detailer_negative: str = '', detailer_steps: int = 10, detailer_strength: float = 0.3,
                 hdr_mode: int = 0, hdr_brightness: float = 0, hdr_color: float = 0, hdr_sharpen: float = 0, hdr_clamp: bool = False, hdr_boundary: float = 4.0, hdr_threshold: float = 0.95,
                 hdr_maximize: bool = False, hdr_max_center: float = 0.6, hdr_max_boundry: float = 1.0, hdr_color_picker: str = None, hdr_tint_ratio: float = 0,
@@ -290,7 +292,7 @@ def control_run(state: str = '',
         diffusers_guidance_rescale = diffusers_guidance_rescale,
         pag_scale = pag_scale,
         pag_adaptive = pag_adaptive,
-        full_quality = full_quality,
+        vae_type = vae_type,
         tiling = tiling,
         hidiffusion = hidiffusion,
         # detailer
@@ -427,8 +429,6 @@ def control_run(state: str = '',
     else:
         original_pipeline = None
 
-    possible = sd_models.get_call(pipe).keys()
-
     try:
         with devices.inference_context():
             if isinstance(inputs, str): # only video, the rest is a list
@@ -460,6 +460,7 @@ def control_run(state: str = '',
                 if pipe is None: # pipe may have been reset externally
                     pipe = set_pipe(p, has_models, unit_type, selected_models, active_model, active_strength, control_conditioning, control_guidance_start, control_guidance_end, inits)
                     debug_log(f'Control pipeline reinit: class={pipe.__class__.__name__}')
+                possible = sd_models.get_call(pipe).keys()
                 processed_image = None
                 if frame is not None:
                     inputs = [Image.fromarray(frame)] # cv2 to pil
@@ -610,6 +611,8 @@ def control_run(state: str = '',
                         elif input_type == 1: # Init image same as control
                             if 'control_image' in possible:
                                 p.task_args['control_image'] = p.init_images # switch image and control_image
+                            if 'control_mode' in possible:
+                                p.task_args['control_mode'] = getattr(p, 'control_mode', None)
                             if 'strength' in possible:
                                 p.task_args['strength'] = p.denoising_strength
                             p.init_images = [p.override or input_image] * len(active_model)
@@ -619,9 +622,14 @@ def control_run(state: str = '',
                                 init_image = input_image
                             if 'control_image' in possible:
                                 p.task_args['control_image'] = p.init_images # switch image and control_image
+                            if 'control_mode' in possible:
+                                p.task_args['control_mode'] = getattr(p, 'control_mode', None)
                             if 'strength' in possible:
                                 p.task_args['strength'] = p.denoising_strength
                             p.init_images = [init_image] * len(active_model)
+                        if hasattr(shared.sd_model, 'controlnet') and hasattr(p.task_args, 'control_image') and len(p.task_args['control_image']) > 1 and (shared.sd_model.__class__.__name__ == 'StableDiffusionXLControlNetUnionPipeline'): # special case for controlnet-union
+                            p.task_args['control_image'] = [[x] for x in p.task_args['control_image']]
+                            p.task_args['control_mode'] = [[x] for x in p.task_args['control_mode']]
 
                     if is_generator:
                         image_txt = f'{blended_image.width}x{blended_image.height}' if blended_image is not None else 'None'
@@ -663,8 +671,6 @@ def control_run(state: str = '',
                         if unit_type == 'lite':
                             p.init_image = [input_image]
                             instance.apply(selected_models, processed_image, control_conditioning)
-                        if getattr(p, 'control_mode', None) is not None:
-                            p.task_args['control_mode'] = getattr(p, 'control_mode', None)
                     if hasattr(p, 'init_images') and p.init_images is None: # delete empty
                         del p.init_images
 

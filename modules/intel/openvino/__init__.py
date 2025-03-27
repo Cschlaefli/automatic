@@ -3,10 +3,10 @@ import sys
 import torch
 import nncf
 
-from openvino.frontend import FrontEndManager
-from openvino.frontend.pytorch.fx_decoder import TorchFXPythonDecoder
 from openvino.frontend.pytorch.torchdynamo.partition import Partitioner
-from openvino.runtime import Core, Type, PartialShape, serialize
+from openvino.frontend.pytorch.fx_decoder import TorchFXPythonDecoder
+from openvino.frontend import FrontEndManager
+from openvino import Core, Type, PartialShape, serialize
 from openvino.properties import hint as ov_hints
 
 from torch._dynamo.backends.common import fake_tensor_unsupported
@@ -21,6 +21,24 @@ from hashlib import sha256
 import functools
 
 from modules import shared, devices, sd_models
+
+
+# importing openvino.runtime forces DeprecationWarning to "always"
+# And Intel's own libs (NNCF) imports the deprecated module
+# Reset the warnings back to ignore:
+try:
+    import warnings
+    import openvino.runtime # pylint: disable=unused-import
+    warnings.filterwarnings(action="ignore", category=DeprecationWarning)
+except Exception:
+    pass
+
+
+# Set default params
+torch._dynamo.config.cache_size_limit = 64 # pylint: disable=protected-access
+torch._dynamo.eval_frame.check_if_dynamo_supported = lambda: True # pylint: disable=protected-access
+if hasattr(torch._dynamo.config, "inline_inbuilt_nn_modules"):
+    torch._dynamo.config.inline_inbuilt_nn_modules = False # pylint: disable=protected-access
 
 
 DEFAULT_OPENVINO_PYTHON_CONFIG = MappingProxyType(
@@ -114,9 +132,9 @@ def cached_model_name(model_hash_str, device, args, cache_root, reversed = False
     for input_data in args:
         if isinstance(input_data, torch.SymInt):
             if reversed:
-                inputs_str = "_" + "torch.SymInt1" + inputs_str
+                inputs_str = "_" + "torch.SymInt[]" + inputs_str
             else:
-                inputs_str += "_" + "torch.SymInt1"
+                inputs_str += "_" + "torch.SymInt[]"
         elif isinstance(input_data, int):
             pass
         else:
@@ -176,7 +194,7 @@ def openvino_compile(gm: GraphModule, *example_inputs, model_hash_str: str = Non
         for input_data in example_inputs:
             if isinstance(input_data, torch.SymInt):
                 input_types.append(torch.SymInt)
-                input_shapes.append(torch.Size([1]))
+                input_shapes.append(torch.Size([]))
             elif isinstance(input_data, int):
                 pass
             else:
@@ -221,10 +239,10 @@ def openvino_compile(gm: GraphModule, *example_inputs, model_hash_str: str = Non
         for idx, _ in enumerate(example_inputs):
             new_inputs.append(example_inputs[idx].detach().cpu().numpy())
         new_inputs = [new_inputs]
-        if shared.opts.nncf_quant_mode == "INT8":
+        if shared.opts.nncf_quantize_mode == "INT8":
             om = nncf.quantize(om, nncf.Dataset(new_inputs))
         else:
-            om = nncf.quantize(om, nncf.Dataset(new_inputs), mode=getattr(nncf.QuantizationMode, shared.opts.nncf_quant_mode),
+            om = nncf.quantize(om, nncf.Dataset(new_inputs), mode=getattr(nncf.QuantizationMode, shared.opts.nncf_quantize_mode),
                 advanced_parameters=nncf.quantization.advanced_parameters.AdvancedQuantizationParameters(
                 overflow_fix=nncf.quantization.advanced_parameters.OverflowFix.DISABLE, backend_params=None))
 
@@ -232,7 +250,9 @@ def openvino_compile(gm: GraphModule, *example_inputs, model_hash_str: str = Non
         if dont_use_4bit_nncf or shared.opts.nncf_compress_weights_mode == "INT8":
             om = nncf.compress_weights(om)
         else:
-            om = nncf.compress_weights(om, mode=getattr(nncf.CompressWeightsMode, shared.opts.nncf_compress_weights_mode), group_size=8, ratio=shared.opts.nncf_compress_weights_raito)
+            compress_group_size = shared.opts.nncf_compress_weights_group_size if shared.opts.nncf_compress_weights_group_size != 0 else None
+            compress_ratio = shared.opts.nncf_compress_weights_raito if shared.opts.nncf_compress_weights_raito != 0 else None
+            om = nncf.compress_weights(om, mode=getattr(nncf.CompressWeightsMode, shared.opts.nncf_compress_weights_mode), group_size=compress_group_size, ratio=compress_ratio)
 
     hints = {}
     if shared.opts.openvino_accuracy == "performance":
@@ -279,10 +299,10 @@ def openvino_compile_cached_model(cached_model_path, *example_inputs):
         for idx, _ in enumerate(example_inputs):
             new_inputs.append(example_inputs[idx].detach().cpu().numpy())
         new_inputs = [new_inputs]
-        if shared.opts.nncf_quant_mode == "INT8":
+        if shared.opts.nncf_quantize_mode == "INT8":
             om = nncf.quantize(om, nncf.Dataset(new_inputs))
         else:
-            om = nncf.quantize(om, nncf.Dataset(new_inputs), mode=getattr(nncf.QuantizationMode, shared.opts.nncf_quant_mode),
+            om = nncf.quantize(om, nncf.Dataset(new_inputs), mode=getattr(nncf.QuantizationMode, shared.opts.nncf_quantize_mode),
                 advanced_parameters=nncf.quantization.advanced_parameters.AdvancedQuantizationParameters(
                 overflow_fix=nncf.quantization.advanced_parameters.OverflowFix.DISABLE, backend_params=None))
 
@@ -290,7 +310,9 @@ def openvino_compile_cached_model(cached_model_path, *example_inputs):
         if dont_use_4bit_nncf or shared.opts.nncf_compress_weights_mode == "INT8":
             om = nncf.compress_weights(om)
         else:
-            om = nncf.compress_weights(om, mode=getattr(nncf.CompressWeightsMode, shared.opts.nncf_compress_weights_mode), group_size=8, ratio=shared.opts.nncf_compress_weights_raito)
+            compress_group_size = shared.opts.nncf_compress_weights_group_size if shared.opts.nncf_compress_weights_group_size != 0 else None
+            compress_ratio = shared.opts.nncf_compress_weights_raito if shared.opts.nncf_compress_weights_raito != 0 else None
+            om = nncf.compress_weights(om, mode=getattr(nncf.CompressWeightsMode, shared.opts.nncf_compress_weights_mode), group_size=compress_group_size, ratio=compress_ratio)
 
     hints = {'CACHE_DIR': shared.opts.openvino_cache_path + '/blob'}
     if shared.opts.openvino_accuracy == "performance":
@@ -422,9 +444,8 @@ def get_subgraph_type(tensor):
     return tensor
 
 
-@register_backend
 @fake_tensor_unsupported
-def openvino_fx(subgraph, example_inputs):
+def openvino_fx(subgraph, example_inputs, options=None):
     global dont_use_4bit_nncf
     global dont_use_nncf
     global dont_use_quant
@@ -524,6 +545,8 @@ def openvino_fx(subgraph, example_inputs):
     for node in model.graph.nodes:
         if node.target == torch.ops.aten.mul_.Tensor:
             node.target = torch.ops.aten.mul.Tensor
+        elif node.target == torch.ops.aten._unsafe_index.Tensor:
+            node.target = torch.ops.aten.index.Tensor
     with devices.inference_context():
         model.eval()
     partitioner = Partitioner(options=None)
@@ -539,3 +562,7 @@ def openvino_fx(subgraph, example_inputs):
         res = execute(compiled_model, *args, executor="openvino", executor_parameters=executor_parameters, file_name=maybe_fs_cached_name)
         return res
     return _call
+
+
+if "openvino_fx" not in torch.compiler.list_backends():
+    register_backend(compiler_fn=openvino_fx, name="openvino_fx")

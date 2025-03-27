@@ -5,12 +5,13 @@ from modules.call_queue import wrap_gradio_gpu_call, wrap_queued_call
 from modules import timer, shared, ui_common, ui_sections, generation_parameters_copypaste, processing_vae
 
 
-def process_interrogate(interrogation_function, mode, ii_input_files, ii_input_dir, ii_output_dir, *ii_singles):
+def process_interrogate(mode, ii_input_files, ii_input_dir, ii_output_dir, *ii_singles):
+    from modules.interrogate.interrogate import interrogate
     mode = int(mode)
     if mode in {0, 1, 3, 4}:
-        return [interrogation_function(ii_singles[mode]), None]
+        return [interrogate(ii_singles[mode]), None]
     if mode == 2:
-        return [interrogation_function(ii_singles[mode]["image"]), None]
+        return [interrogate(ii_singles[mode]["image"]), None]
     if mode == 5:
         if len(ii_input_files) > 0:
             images = [f.name for f in ii_input_files]
@@ -27,7 +28,7 @@ def process_interrogate(interrogation_function, mode, ii_input_files, ii_input_d
             img = Image.open(image)
             filename = os.path.basename(image)
             left, _ = os.path.splitext(filename)
-            print(interrogation_function(img), file=open(os.path.join(ii_output_dir, f"{left}.txt"), 'a', encoding='utf-8')) # pylint: disable=consider-using-with
+            print(interrogate(img), file=open(os.path.join(ii_output_dir, f"{left}.txt"), 'a', encoding='utf-8')) # pylint: disable=consider-using-with
     return [gr.update(), None]
 
 
@@ -54,13 +55,13 @@ def create_ui():
                     return img['image'] if isinstance(img, dict) and 'image' in img else img
 
                 def add_copy_image_controls(tab_name, elem):
-                    with gr.Row(variant="compact", elem_id=f"img2img_copy_to_{tab_name}"):
-                        for title, name in zip(['➠ Image', '➠ Inpaint', '➠ Sketch', '➠ Composite'], ['img2img', 'sketch', 'inpaint', 'composite']):
+                    with gr.Row(variant="compact", elem_id=f"img2img_copy_{tab_name}_row"):
+                        for title, name in zip(['➠ Image', '➠ Inpaint', '➠ Sketch', '➠ Composite'], ['img2img', 'inpaint', 'sketch', 'composite']):
                             if name == tab_name:
-                                gr.Button(title, elem_id=f'copy_to_{name}', interactive=False)
+                                gr.Button(title, elem_id=f'{tab_name}_copy_to_{name}', interactive=False)
                                 copy_image_destinations[name] = elem
                                 continue
-                            button = gr.Button(title, elem_id=f'copy_to_{name}')
+                            button = gr.Button(title, elem_id=f'{tab_name}_copy_to_{name}')
                             copy_image_buttons.append((button, name, elem))
 
                 with gr.Tabs(elem_id="mode_img2img"):
@@ -68,7 +69,7 @@ def create_ui():
                     state = gr.Textbox(value='', visible=False)
                     with gr.TabItem('Image', id='img2img_image', elem_id="img2img_image_tab") as tab_img2img:
                         img_init = gr.Image(label="", elem_id="img2img_image", show_label=False, source="upload", interactive=True, type="pil", tool="editor", image_mode="RGBA", height=512)
-                        interrogate_clip, interrogate_booru = ui_sections.create_interrogate_buttons('img2img')
+                        interrogate_btn = ui_sections.create_interrogate_button(tab='img2img')
                         add_copy_image_controls('img2img', img_init)
 
                     with gr.TabItem('Inpaint', id='img2img_inpaint', elem_id="img2img_inpaint_tab") as tab_inpaint:
@@ -130,7 +131,7 @@ def create_ui():
                             denoising_strength = gr.Slider(minimum=0.0, maximum=0.99, step=0.01, label='Denoising strength', value=0.30, elem_id="img2img_denoising_strength")
                             refiner_start = gr.Slider(minimum=0.0, maximum=1.0, step=0.05, label='Denoise start', value=0.0, elem_id="img2img_refiner_start")
 
-                    full_quality, tiling, hidiffusion, cfg_scale, clip_skip, image_cfg_scale, diffusers_guidance_rescale, pag_scale, pag_adaptive, cfg_end = ui_sections.create_advanced_inputs('img2img')
+                    vae_type, tiling, hidiffusion, cfg_scale, clip_skip, image_cfg_scale, diffusers_guidance_rescale, pag_scale, pag_adaptive, cfg_end = ui_sections.create_advanced_inputs('img2img')
                     hdr_mode, hdr_brightness, hdr_color, hdr_sharpen, hdr_clamp, hdr_boundary, hdr_threshold, hdr_maximize, hdr_max_center, hdr_max_boundry, hdr_color_picker, hdr_tint_ratio = ui_sections.create_correction_inputs('img2img')
                     enable_hr, hr_sampler_index, hr_denoising_strength, hr_resize_mode, hr_resize_context, hr_upscaler, hr_force, hr_second_pass_steps, hr_scale, hr_resize_x, hr_resize_y, refiner_steps, hr_refiner_start, refiner_prompt, refiner_negative = ui_sections.create_hires_inputs('txt2img')
                     detailer_enabled, detailer_prompt, detailer_negative, detailer_steps, detailer_strength = shared.yolo.ui('img2img')
@@ -174,7 +175,7 @@ def create_ui():
                 sampler_index,
                 mask_blur, mask_alpha,
                 inpainting_fill,
-                full_quality, tiling, hidiffusion,
+                vae_type, tiling, hidiffusion,
                 detailer_enabled, detailer_prompt, detailer_negative, detailer_steps, detailer_strength,
                 batch_count, batch_size,
                 cfg_scale, image_cfg_scale,
@@ -227,8 +228,7 @@ def create_ui():
                 ],
                 outputs=[img2img_prompt, dummy_component],
             )
-            interrogate_clip.click(fn=lambda *args: process_interrogate(ui_common.interrogate_clip, *args), **interrogate_args)
-            interrogate_booru.click(fn=lambda *args: process_interrogate(ui_common.interrogate_booru, *args), **interrogate_args)
+            interrogate_btn.click(fn=lambda *args: process_interrogate(*args), **interrogate_args)
 
             img2img_token_button.click(fn=wrap_queued_call(ui_common.update_token_counter), inputs=[img2img_prompt, steps], outputs=[img2img_token_counter])
             img2img_negative_token_button.click(fn=wrap_queued_call(ui_common.update_token_counter), inputs=[img2img_negative_prompt, steps], outputs=[img2img_negative_token_counter])
@@ -261,7 +261,7 @@ def create_ui():
                 (image_cfg_scale, "Hires CFG scale"),
                 (clip_skip, "Clip skip"),
                 (diffusers_guidance_rescale, "CFG rescale"),
-                (full_quality, "Full quality"),
+                (vae_type, "VAE type"),
                 (tiling, "Tiling"),
                 (hidiffusion, "HiDiffusion"),
                 # detailer

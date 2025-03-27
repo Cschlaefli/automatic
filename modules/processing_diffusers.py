@@ -5,7 +5,7 @@ import numpy as np
 import torch
 import torchvision.transforms.functional as TF
 from PIL import Image
-from modules import shared, devices, processing, sd_models, errors, sd_hijack_hypertile, processing_vae, sd_models_compile, hidiffusion, timer, modelstats, extra_networks
+from modules import shared, devices, processing, sd_models, errors, sd_hijack_hypertile, processing_vae, sd_models_compile, hidiffusion, timer, modelstats, extra_networks, ras
 from modules.processing_helpers import resize_hires, calculate_base_steps, calculate_hires_steps, calculate_refiner_steps, save_intermediate, update_sampler, is_txt2img, is_refiner_enabled, get_job_name
 from modules.processing_args import set_pipeline_args
 from modules.onnx_impl import preprocess_pipeline as preprocess_onnx_pipeline, check_parameters_changed as olive_check_parameters_changed
@@ -93,6 +93,7 @@ def process_base(p: processing.StableDiffusionProcessing):
             sd_models.move_model(shared.sd_model.transformer, devices.device)
         extra_networks.activate(p, exclude=['text_encoder', 'text_encoder_2', 'text_encoder_3'])
         hidiffusion.apply(p, shared.sd_model_type)
+        ras.apply(shared.sd_model, p)
         timer.process.record('move')
         if hasattr(shared.sd_model, 'tgate') and getattr(p, 'gate_step', -1) > 0:
             base_args['gate_step'] = p.gate_step
@@ -106,6 +107,7 @@ def process_base(p: processing.StableDiffusionProcessing):
         if hasattr(output, 'images'):
             shared.history.add(output.images, info=processing.create_infotext(p), ops=p.ops)
         timer.process.record('pipeline')
+        ras.unapply(shared.sd_model)
         hidiffusion.unapply()
         sd_models_compile.openvino_post_compile(op="base") # only executes on compiled vino models
         sd_models_compile.check_deepcache(enable=False)
@@ -150,6 +152,8 @@ def process_base(p: processing.StableDiffusionProcessing):
 
 def process_hires(p: processing.StableDiffusionProcessing, output):
     # optional second pass
+    if (output is None) or (output.images is None):
+        return output
     if p.enable_hr:
         p.is_hr_pass = True
         if hasattr(p, 'init_hr'):
@@ -175,12 +179,11 @@ def process_hires(p: processing.StableDiffusionProcessing, output):
             if shared.opts.samples_save and not p.do_not_save_samples and shared.opts.save_images_before_highres_fix and hasattr(shared.sd_model, 'vae'):
                 save_intermediate(p, latents=output.images, suffix="-before-hires")
             shared.state.update('Upscale', 0, 1)
-            output.images = resize_hires(p, latents=output.images) if output is not None else []
+            output.images = resize_hires(p, latents=output.images)
             sd_hijack_hypertile.hypertile_set(p, hr=True)
 
-        latent_upscale = shared.latent_upscale_modes.get(p.hr_upscaler, None)
         strength = p.hr_denoising_strength if p.hr_denoising_strength > 0 else p.denoising_strength
-        if (latent_upscale is not None or p.hr_force) and strength > 0:
+        if (p.hr_upscaler.lower().startswith('latent') or p.hr_force) and strength > 0:
             p.ops.append('hires')
             sd_models_compile.openvino_recompile_model(p, hires=True, refiner=False)
             if shared.sd_model.__class__.__name__ == "OnnxRawPipeline":
@@ -194,10 +197,10 @@ def process_hires(p: processing.StableDiffusionProcessing, output):
         if p.hr_force:
             shared.sd_model = sd_models.set_diffuser_pipe(shared.sd_model, sd_models.DiffusersTaskType.IMAGE_2_IMAGE)
             if 'Upscale' in shared.sd_model.__class__.__name__ or 'Flux' in shared.sd_model.__class__.__name__ or 'Kandinsky' in shared.sd_model.__class__.__name__:
-                output.images = processing_vae.vae_decode(latents=output.images, model=shared.sd_model, full_quality=p.full_quality, output_type='pil', width=p.width, height=p.height)
+                output.images = processing_vae.vae_decode(latents=output.images, model=shared.sd_model, vae_type=p.vae_type, output_type='pil', width=p.width, height=p.height)
             if p.is_control and hasattr(p, 'task_args') and p.task_args.get('image', None) is not None:
                 if hasattr(shared.sd_model, "vae") and output.images is not None and len(output.images) > 0:
-                    output.images = processing_vae.vae_decode(latents=output.images, model=shared.sd_model, full_quality=p.full_quality, output_type='pil', width=p.hr_upscale_to_x, height=p.hr_upscale_to_y) # controlnet cannnot deal with latent input
+                    output.images = processing_vae.vae_decode(latents=output.images, model=shared.sd_model, vae_type=p.vae_type, output_type='pil', width=p.hr_upscale_to_x, height=p.hr_upscale_to_y) # controlnet cannnot deal with latent input
             update_sampler(p, shared.sd_model, second_pass=True)
             orig_denoise = p.denoising_strength
             p.denoising_strength = strength
@@ -257,6 +260,8 @@ def process_hires(p: processing.StableDiffusionProcessing, output):
 
 def process_refine(p: processing.StableDiffusionProcessing, output):
     # optional refiner pass or decode
+    if (output is None) or (output.images is None):
+        return output
     if is_refiner_enabled(p):
         prev_job = shared.state.job
         if shared.opts.samples_save and not p.do_not_save_samples and shared.opts.save_images_before_refiner and hasattr(shared.sd_model, 'vae'):
@@ -284,7 +289,7 @@ def process_refine(p: processing.StableDiffusionProcessing, output):
             noise_level = round(350 * p.denoising_strength)
             output_type='latent'
             if 'Upscale' in shared.sd_refiner.__class__.__name__ or 'Flux' in shared.sd_refiner.__class__.__name__ or 'Kandinsky' in shared.sd_refiner.__class__.__name__:
-                image = processing_vae.vae_decode(latents=image, model=shared.sd_model, full_quality=p.full_quality, output_type='pil', width=p.width, height=p.height)
+                image = processing_vae.vae_decode(latents=image, model=shared.sd_model, vae_type=p.vae_type, output_type='pil', width=p.width, height=p.height)
                 p.extra_generation_params['Noise level'] = noise_level
                 output_type = 'np'
             update_sampler(p, shared.sd_refiner, second_pass=True)
@@ -365,7 +370,7 @@ def process_decode(p: processing.StableDiffusionProcessing, output):
                     result_batch = processing_vae.vae_decode(
                         latents = output.images[i],
                         model = model,
-                        full_quality = p.full_quality,
+                        vae_type = p.vae_type,
                         width = width,
                         height = height,
                         frames = frames,
@@ -376,7 +381,7 @@ def process_decode(p: processing.StableDiffusionProcessing, output):
                 results = processing_vae.vae_decode(
                     latents = output.images,
                     model = model,
-                    full_quality = p.full_quality,
+                    vae_type = p.vae_type,
                     width = width,
                     height = height,
                     frames = frames,

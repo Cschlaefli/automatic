@@ -327,6 +327,8 @@ class ReqInterrogate(BaseModel):
     clip_model: str = Field(default="", title="CLiP Model", description="The interrogate model used.")
     blip_model: str = Field(default="", title="BLiP Model", description="The interrogate model used.")
 
+InterrogateRequest = ReqInterrogate # alias for backwards compatibility
+
 class ResInterrogate(BaseModel):
     caption: Optional[str] = Field(default=None, title="Caption", description="The generated caption for the image.")
     medium: Optional[str] = Field(default=None, title="Medium", description="Image medium.")
@@ -337,7 +339,7 @@ class ResInterrogate(BaseModel):
 
 class ReqVQA(BaseModel):
     image: str = Field(default="", title="Image", description="Image to work on, must be a Base64 string containing the image's data.")
-    model: str = Field(default="MS Florence 2 Base", title="Model", description="The interrogate model used.")
+    model: str = Field(default="Microsoft Florence 2 Base", title="Model", description="The interrogate model used.")
     question: str = Field(default="describe the image", title="Question", description="Question to ask the model.")
 
 class ReqHistory(BaseModel):

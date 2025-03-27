@@ -1,15 +1,389 @@
 # Change Log for SD.Next
 
-## Update for 2025-01-16
+## Update for 2025-03-14
 
-- **Gallery**:  
-  - add http fallback for slow/unreliable links  
-- **Fixes**:
+- fix installer not starting when older version of rich is installed  
+- fix circular imports when debug flags are enabled  
+- fix cuda errors with directml  
+- fix memory stats not displaying the ram usage  
+- fix runpod memory limit reporting  
+- fix remote vae not being stored in metadata, thanks @iDeNoh  
+- add --upgrade to torch_command when using --use-nightly for ipex and rocm  
+- **ipex**
+  - add xpu to profiler  
+  - fix untyped_storage, torch.eye and torch.cuda.device ops  
+  - fix torch 2.7 compatibility  
+  - fix performance with balanced offload  
+  - fix triton and torch.compile  
+
+## Update for 2025-02-28
+
+Primarily a hotfix/service release plus few UI improvements and one exciting new feature: Remote-VAE!
+
+- **Remote Decode**  
+  - final step of image generate, VAE decode, is by far the most memory intensive operation and can easily result in out-of-memory errors  
+    what can be done? Well, *Huggingface* is now providing *free-of-charge* **remote-VAE-decode** service!  
+  - how to use? previous *Full quality* option in UI is replaced with VAE type selector: *Full, Tiny, Remote*  
+    currently supports SD15, SDXL and FLUX.1 with more models expected in the near future  
+    depending on your bandwidth select mode in *settings -> vae -> raw/png/jpg*  
+    if remote processing fails SD.Next will fallback to using normal VAE decode process  
+    *privacy note*: only passed item is final latent itself without any user or generate information and latent is not stored in the cloud  
+- **UI**
+  - modern ui reorg main tab  
+    improve styling, improve scripts/extensions interface and separate ipadapters  
+  - additional ui hints  
+- **Other**  
+  - add `--extensions-dir` cli arg and `SD_EXTENSIONSDIR` env variable to specify extensions directory  
+  - update `zluda==3.9.0`
+- **Fixes**  
+  - skip trying to register legacy/incompatibile extensions in control ui  
+  - add additional scripts/extensions callbacks  
+  - remove ui splash screen on auth fail  
+  - log full config path, full log path, system name, extensions path
+  - zluda hotfixes  
+  - zluda force sync  
+  - fix torch import on compile  
+  - infotext parser force delimiter before params  
+  - handle pipeline class switch errors  
+  - improve extensions options compatibility  
+  - fix flux on ipex  
+  - disable fp64 emulation on ipex  
+
+## Update for 2025-02-18
+
+### Highlight for 2025-02-18
+
+We're back with another update with nearly 100 commits!  
+- Starting with massive UI update with full [localization](https://vladmandic.github.io/sdnext-docs/Locale/) for 8 languages  
+  and 100+ new [hints](https://vladmandic.github.io/sdnext-docs/Hints/)  
+- Big update to [Docker](https://vladmandic.github.io/sdnext-docs/Docker/) containers  
+  with support for all major compute platforms  
+- A lot of [outpainting](https://vladmandic.github.io/sdnext-docs/Outpaint/) goodies  
+- Support for new models: [AlphaVLLM Lumina 2](https://github.com/Alpha-VLLM/Lumina-Image-2.0) and [Ostris Flex.1-Alpha](https://huggingface.co/ostris/Flex.1-alpha)  
+- And new **Mixture-of-Diffusers** regional prompting & tiling pipeline  
+- Follow-up to last weeks **interrogate/captioning** rewrite  
+  now with redesigned captioning UI, batch support, and much more  
+  plus **JoyTag**, **JoyCaption**, **PaliGemma**, **ToriiGate**, **Ovis2** added to list of supported models  
+- Some changes to **prompt parsing** to allow more control as well as  
+  more flexibility when mouting SDNext server to custom URL  
+- Of course, cumulative fixes...  
+
+*...and more* - see [changelog](https://github.com/vladmandic/sdnext/blob/dev/CHANGELOG.md) for full details!  
+
+### Details for 2025-02-20
+
+- **User Interface**  
+  - **Hints**  
+    - added/updated 100+ ui hints!  
+    - [hints](https://vladmandic.github.io/sdnext-docs/Hints/) documentation and contribution guide  
+  - **Localization**  
+    - full ui localization!  
+      *english, croatian, spanish, french, italian, portuguese, chinese, japanese, korean, russian*  
+    - set in *settings -> user interface -> language*  
+    - [localization](https://vladmandic.github.io/sdnext-docs/Locale/) documentation  
+  - **UI**  
+    - force browser cache-invalidate on page load  
+    - configurable request timeout  
+    - modernui improve gallery styling  
+    - modernui improve networks styling  
+    - modernui support variable card size  
+- **Docs**  
+  - New [Outpaint](https://vladmandic.github.io/sdnext-docs/Outpaint/) step-by-step guide  
+  - Updated [Docker](https://github.com/vladmandic/sdnext/wiki/Docker) guide  
+    includes build and publish and both local and cloud examples  
+- **Models**  
+  - [AlphaVLLM Lumina 2](https://github.com/Alpha-VLLM/Lumina-Image-2.0)  
+    new foundation model for image generation based o Gemma-2-2B text encoder and a flow-based diffusion transformer  
+    fully supports offloading and on-the-fly quantization  
+    simply select from *networks -> models -> reference*  
+  - [Ostris Flex.1-Alpha](https://huggingface.co/ostris/Flex.1-alpha)  
+    originally based on *Flux.1-Schnell*, but retrained and with different architecture  
+    result is model smaller than *Flux.1-Dev*, but with similar capabilities  
+    fully supports offloading and on-the-fly quantization  
+    simply select from *networks -> models -> reference*  
+- **Functions**  
+  - [Mixture-of-Diffusers](https://huggingface.co/posts/elismasilva/251775641926329)  
+    Regional tiling type of a solution for SDXL models  
+    select from *scripts -> mixture of diffusers*  
+  - [Automatic Color Inpaint]  
+    Automatically creates mask based on selected color and triggers inpaint  
+    simply select in *scripts -> automatic color inpaint* when in img2img mode  
+  - [RAS: Region-Adaptive Sampling](https://github.com/microsoft/RAS) *experimental*  
+    Speeds up SD3.5 models by sampling only regions of interest  
+    Enable in *settings -> pipeline modifiers -> ras*  
+- **Interrogate/Captioning**  
+  - Redesigned captioning UI  
+    split from Process tab into separate tab  
+    split `clip` vs `vlm` models processing  
+    direct *send-to* buttons on all tabs: txt/img/ctrl->process/caption, process/caption->txt/img/ctrl  
+  - Advanced params:
+    VLM: *max-tokens, num-beams, temperature, top-k, top-p, do-sample*  
+    CLiP: *min-length, max-length, chunk-size, min-flavors, max-flavors, flavor-count, num-beams*  
+    params are auto-saved in `config.json` and used when using quick interrogate  
+    params that are set to 0 mean use model defaults  
+  - Batch processing: VLM and CLiP  
+    for example, can be used to caption your training dataset in one go  
+    add option to append to captions file, can be used to run multiple captioning models in sequence  
+    add option to run recursively on all subfolders  
+    add progress bar  
+  - Add additional VLM models:  
+    [JoyTag](https://huggingface.co/fancyfeast/joytag)  
+    [JoyCaption 2](https://huggingface.co/fancyfeast/llama-joycaption-alpha-two-hf-llava)  
+    [Google PaliGemma 2](https://huggingface.co/google/paligemma2-3b-pt-224) 3B  
+    [ToriiGate 0.4](https://huggingface.co/Minthy/ToriiGate-v0.4-7B) 7B  
+    [AIDC Ovis2](https://huggingface.co/AIDC-AI/Ovis2-1B) 1B/2B/4B  
+  - *Note* some models require `flash-attn` to be installed  
+    due to binary/build dependencies, it should not be done automatically,  
+    see [flash-attn](https://github.com/Dao-AILab/flash-attention) for installation instructions  
+- **Docker**  
+  - updated **CUDA** receipe to `torch==2.6.0` with `cuda==12.6` and add prebuilt image  
+  - added **ROCm** receipe and prebuilt image  
+  - added **IPEX** receipe and add prebuilt image  
+  - added **OpenVINO** receipe and prebuilt image   
+- **System**  
+  - improve **python==3.12** compatibility  
+  - **Torch**  
+    - for **zluda** set default to `torch==2.6.0+cu118`  
+    - for **openvino** set default to `torch==2.6.0+cpu`  
+  - **OpenVINO**  
+    - update to `openvino==2025.0.0`  
+    - improve upscaler compatibility  
+    - enable upscaler compile by default  
+    - fix shape mismatch errors on too many resolution changes  
+  - **ZLUDA**  
+    - update to `zluda==3.8.8`  
+- **Other**  
+  - **Asymmetric tiling**  
+    allows for configurable image tiling for x/y axis separately  
+    enable in *scripts -> asymmetric tiling*  
+    *note*: traditional symmetric tiling is achieved by setting circular mode for both x and y  
+  - **Styles**  
+    ability to save and/or restore prompts before or after parsing of wildcards  
+    set in *settings -> networks -> styles*  
+  - **Access tokens**  
+    persist *models -> hugginface -> token*  
+    persist *models -> civitai -> token*  
+  - global switch to lancosz method for all interal resize ops and bicubic for interpolation ops  
+  - **Text encoder**  
+    add advanced per-model options for text encoder  
+    set in *settings -> text encoder -> Optional*  
+  - **Subpath**  
+    allow setting additional mount subpath over which server url will be accessible  
+    set in *settings -> user interface*  
+  - **Prompt parsing**  
+    better handling of prompt parsing when using masking char `\`  
+- **Fixes**  
+  - update torch nightly urls  
+  - docs/wiki always use relative links  
+  - ui use correct timezone for log display  
+  - ui improve settings search behavior  
+  - ui log scroll to bottom  
+  - ui fix send to inpaint/sketch  
+  - modernui add control init image toggle  
+  - modernui fix sampler advanced options  
+  - outpaint fixes  
+  - validate output before hires/refine  
+  - scheduler fix sigma index out of bounds  
+  - force pydantic version reinstall/reload  
+  - multi-unit when using controlnet-union  
+  - pulid with hidiffusion  
+  - api: stricter access control  
+  - api: universal handle mount subpaths  
+
+## Update for 2025-02-05
+
+- refresh dev/master branches
+
+## Update for 2025-02-04
+
+### Highlights for 2025-02-04
+
+Just one week after latest release and what a week it was with over 50 commits!  
+
+*What's New?*  
+- Rehosted core repo to new [home](https://github.com/vladmandic/sdnext)  
+- Switched to using `torch==2.6.0` and added support for `nightly` builds required for **nVidia Blackwell** GPUs  
+- Completely new **interrogate/captioning**, now supporting 150+ **OpenCLiP** models and 20+ built-in **VLMs**  
+- Support for **new VLMs**, New SOTA **background removal**  
+- Other: *torch tunable ops, extra networks search/filter, balanced offload, prompt parser, configurable tracebacks, etc.*  
+- Cumulative fixes...  
+
+### Details for 2025-02-04
+
+- **GitHub**
+  - rename core repo from <https://github.com/vladmandic/automatic> to <https://github.com/vladmandic/sdnext>  
+    old repo url should automatically redirect to new one for seamless transition and in-place upgrades   
+    all internal links have been updated  
+    wiki content and docs site have been updated  
+- **Docs**:
+  - Updated [Debugging guide](https://github.com/vladmandic/automatic/wiki/Debug)  
+- **Torch**:
+  - for **cuda** set default to `torch==2.6.0+cu126`  
+    for **rocm** set default to `torch==2.6.0+rocm6.2.4`  
+    for **ipex** set default to `torch==2.6.0+xpu`  
+    *note*: to avoid disruptions sdnext does not perform torch install during in-place upgrades  
+    to force torch upgrade, either start with new installation or use `--reinstall` flag  
+  - support for torch **nightly** builds and nvidia **blackwell** gpus!  
+    use `--use-nightly` flag to install torch nightly builds  
+    current defaults to `torch==2.7.0+cu128` prerelease  
+    *note*: nightly builds are required for blackwell gpus  
+  - add support for torch **tunable ops**, this can speed up operations by up to *10-30%* on some platforms  
+    set in *settings -> backend settings -> torch options* and *settings -> system paths -> tunable ops cache*  
+  - add support for stream-loading, this can speed up model loading when models are located on network drives  
+    set in *settings -> models & loading -> model load using streams*  
+  - enhanced error logging  
+- **Interrogate/Captioning**  
+  - single interrogate button for every input or output image  
+  - behavior of interrogate configurable in *settings -> interrogate*  
+    with detailed defaults for each model type also configurable  
+  - select between 150+ *OpenCLiP* supported models, 20+ built-in *VLMs*, *DeepDanbooru*  
+  - **VLM**: now that we can use VLMs freely, we've also added support for few more out-of-the-box  
+    [Alibaba Qwen VL2](https://huggingface.co/Qwen/Qwen2-VL-2B), [Huggingface Smol VL2](HuggingFaceTB/SmolVLM-Instruct), [ToriiGate 0.4](Minthy/ToriiGate-v0.4-2B)  
+- **Postprocess**  
+  - new sota remove background model: [BEN2](https://huggingface.co/PramaLLC/BEN2)  
+    select in *process -> remove background* or enable postprocessing for txt2img/img2img operations  
+- **Other**:
+  - **networks**: imporove search/filter and add visual indicators for types  
+  - **balanced offload** new defaults: *lowvram/4gb min threshold: 0, medvram/8gb min threshold: 0, default min threshold 0.25*  
+  - **prompt parser**: log stats with tokens, sections and min/avg/max weights  
+  - **prompt parser**: add setting to ignore line breaks in prompt  
+    set in *settings -> text encoder -> use line breaks*  
+  - **visual query**: add list of predefined system prompts  
+  - **onnx**: allow manually specifying `onnxruntime` package
+    set env variable `ONNXRUNTIME_COMMAND` to override default package installation  
+  - **nvml cli**: run nvidia-management-lib interrogate from cli  
+    already available in ui in generate -> right click -> nvidia  
+    > python modules/api/nvml.py  
+- **Refactor**:
+  - unified trace handler with configurable tracebacks  
+  - refactor interrogate/analyze/vqa code  
+- **Fixes**:  
+  - photomaker with offloading  
+  - photomaker with refine  
+  - detailer with faceid modules  
+  - detailer restore pipeline before run  
+  - fix `python==3.9` compatibility  
+  - improve `python>=3.12.3` compatibility
+  - handle invalid `triton` on Linux  
+  - correct library import order  
+  - update requirements  
+  - calculate dyn atten bmm slice rate  
+  - dwpose update and patch `mmengine` installer  
+  - ipex device wrapper with adetailer  
+  - openvino error handling  
+  - relax python version checks for rocm  
+  - simplify and improve file wildcard matching  
+  - fix `rich` version  
+  - add cn active label
+
+## Update for 2025-01-29
+
+### Highlights for 2025-01-29
+
+Two weeks since last release, time for update!  
+
+*What's New?*  
+- New **Detailer** functionality including ability to use several new  
+  face-restore models: *RestoreFormer, CodeFormer, GFPGan, GPEN-BFR*
+- Support for new models/pipelines:  
+  face-swapper with **Photomaker-v2** and video with **Fast-Hunyuan**  
+- Support for several new optimizations and accelerations:  
+  Many **IPEX** improvements, native *torch fp8* support,  
+  support for **PAB:Pyramid-attention-broadcast**, **ParaAttention** and **PerFlow**  
+- Fully built-in both model **merge weights** as well as model **merge component**  
+  Finally replace that pesky VAE in your favorite model with a fixed one!  
+- Improved remote access control and reliability as well as running inside containers  
+- And of course, hotfixes for all reported issues...  
+
+### Details for 2025-01-29
+
+- **Contributing**:  
+  - if you'd like to contribute, please see updated [contributing](https://github.com/vladmandic/automatic/blob/dev/CONTRIBUTING) guidelines
+- **Model Merge**
+  - replace model components and merge LoRAs  
+    in addition to existing model weights merge support  
+    now also having ability to replace model components and merge LoRAs  
+    you can also test merges in-memory without needing to save to disk at all  
+    and you can also use it to convert diffusers to safetensors if you want  
+    *example*: replace vae in your favorite model with a fixed one? replace text encoder? etc.  
+    *note*: limited to sdxl for now, additional models can be added depending on popularity  
+- **Detailer**:  
+  - in addition as standard behavior of detect & run-generate, it can now also run face-restore models  
+  - included models are: *CodeFormer, RestoreFormer, GFPGan, GPEN-BFR*  
+- **Face**:  
+  - new [PhotoMaker v2](https://huggingface.co/TencentARC/PhotoMaker-V2) and reimplemented [PhotoMaker v1](https://huggingface.co/TencentARC/PhotoMaker)  
+    compatible with sdxl models, generates pretty good results and its faster than most other methods  
+    select under *scripts -> face -> photomaker*  
+  - new [ReSwapper](https://github.com/somanchiu/ReSwapper)  
+    todo: experimental-only and unfinished, only noting in changelog for future reference  
+- **Video**  
+  - **hunyuan video** support for [FastHunyuan](https://huggingface.co/FastVideo/FastHunyuan)  
+    simply select model variant and set appropriate parameters  
+    recommended: sampler-shift=17, steps=6, resolution=720x1280, frames=125, guidance>6.0  
+- [PAB: Pyramid Attention Broadcast](https://oahzxl.github.io/PAB/)  
+  - speed up generation by caching attention results between steps  
+  - enable in *settings -> pipeline modifiers -> pab*  
+  - adjust settings as needed: wider timestep range means more acceleration, but higher accuracy drop  
+  - compatible with most `transformer` based models: e.g. flux.1, hunyuan-video, lyx-video, mochi, etc.
+- [ParaAttention](https://github.com/chengzeyi/ParaAttention)
+  - first-block caching that can significantly speed up generation by dynamically reusing partial outputs between steps  
+  - available for: flux, hunyuan-video, ltx-video, mochi  
+  - enable in *settings -> pipeline modifiers -> para-attention*  
+  - adjust residual diff threshold to balance the speedup and the accuracy:  
+    higher values leads to more cache hits and speedups, but might also lead to a higher accuracy drop  
+- **IPEX**
+  - enable force attention slicing, fp64 emulation, jit cache  
+  - use the us server by default on linux  
+  - use pytorch test branch on windows  
+  - extend the supported python versions  
+  - improve sdpa dynamic attention  
+- **Torch FP8**
+  - uses torch `float8_e4m3fn` or `float8_e5m2` as data storage and performs dynamic upcasting to compute `dtype` as needed  
+  - compatible with most `unet` and `transformer` based models: e.g. *sd15, sdxl, sd35, flux.1, hunyuan-video, ltx-video, etc.*  
+    this is alternative to `bnb`/`quanto`/`torchao` quantization on models/platforms/gpus where those libraries are not available  
+  - enable in *settings -> quantization -> layerwise casting*  
+- [PerFlow](https://github.com/magic-research/piecewise-rectified-flow)  
+  - piecewise rectified flow as model acceleration  
+  - use `perflow` scheduler combined with one of the available pre-trained [models](https://huggingface.co/hansyan)  
+- **Other**:  
+  - **upscale**: new [asymmetric vae](Heasterian/AsymmetricAutoencoderKLUpscaler) upscaling method
+  - **gallery**: add http fallback for slow/unreliable links  
+  - **splash**: add legacy mode indicator on splash screen  
+  - **network**: extract thumbnail from model metadata if present  
+  - **network**: setting value to disable use of reference models  
+- **Refactor**:  
+  - **upscale**: code refactor to unify latent, resize and model based upscalers  
+  - **loader**: ability to run in-memory models  
+  - **schedulers**: ability to create model-less schedulers  
+  - **quantization**: code refactor into dedicated module  
+  - **dynamic attention sdpa**: more correct implementation and new trigger rate control  
+- **Remote access**:  
+  - perform auth check on ui startup  
+  - unified standard and modern-ui authentication method & cleanup auth logging  
+  - detect & report local/external/public ip addresses if using `listen` mode  
+  - detect *docker* enforced limits instead of system limits if running in a container  
+  - warn if using public interface without authentication  
+- **Fixes**:  
   - non-full vae decode  
   - send-to image transfer  
   - sana vae tiling  
   - increase gallery timeouts  
   - update ui element ids  
+  - modernui use local font  
+  - unique font family registration  
+  - mochi video number of frames  
+  - mark large models that should offload  
+  - avoid repeated optimum-quanto installation  
+  - avoid reinstalling bnb if not cuda  
+  - image metadata civitai compatibility  
+  - xyz grid handle invalid values  
+  - omnigen pipeline handle float seeds  
+  - correct logging of docker status on logs, thanks @kmscode  
+  - fix omnigen  
+  - fix docker status reporting  
+  - vlm/vqa with moondream2  
+  - rocm do not override triton installation  
+  - port streaming model load to diffusers  
 
 ## Update for 2025-01-15
 

@@ -48,17 +48,17 @@ class StableDiffusionProcessing:
                  styles: List[str] = [],
                  # vae
                  tiling: bool = False,
-                 full_quality: bool = True,
+                 vae_type: str = 'Full',
                  # other
                  hidiffusion: bool = False,
                  do_not_reload_embeddings: bool = False,
                  restore_faces: bool = False,
                  # detailer
-                detailer_enabled: bool = False,
-                detailer_prompt: str = '',
-                detailer_negative: str = '',
-                detailer_steps: int = 10,
-                detailer_strength: float = 0.3,
+                 detailer_enabled: bool = False,
+                 detailer_prompt: str = '',
+                 detailer_negative: str = '',
+                 detailer_steps: int = 10,
+                 detailer_strength: float = 0.3,
                  # hdr corrections
                  hdr_mode: int = 0,
                  hdr_brightness: float = 0,
@@ -169,7 +169,7 @@ class StableDiffusionProcessing:
         self.negative_prompt = negative_prompt
         self.styles = styles
         self.tiling = tiling
-        self.full_quality = full_quality
+        self.vae_type = vae_type
         self.hidiffusion = hidiffusion
         self.do_not_reload_embeddings = do_not_reload_embeddings
         self.detailer_enabled = detailer_enabled
@@ -241,6 +241,8 @@ class StableDiffusionProcessing:
         self.inpaint_full_res = inpaint_full_res != 0 if isinstance(inpaint_full_res, int) else self.inpaint_full_res
 
         # null items initialized later
+        self.prompts = None
+        self.negative_prompts = None
         self.all_prompts = None
         self.all_negative_prompts = None
         self.all_seeds = None
@@ -354,7 +356,8 @@ class StableDiffusionProcessing:
         raise NotImplementedError
 
     def close(self):
-        self.sampler = None # pylint: disable=attribute-defined-outside-init
+        self.sampler = None
+        self.scripts = None
 
 
 class StableDiffusionProcessingTxt2Img(StableDiffusionProcessing):
@@ -591,7 +594,7 @@ class StableDiffusionProcessingControl(StableDiffusionProcessingImg2Img):
             self.hr_upscale_to_x, self.hr_upscale_to_y = self.hr_resize_x, self.hr_resize_y
         # hypertile_set(self, hr=True)
         # shared.state.job_count = 2 * self.n_iter
-        shared.log.debug(f'Control hires: upscaler="{self.hr_upscaler}" scale={scale} fixed={not use_scale} size={self.hr_upscale_to_x}x{self.hr_upscale_to_y}')
+        # shared.log.debug(f'Control refine: upscaler="{self.hr_upscaler}" scale={scale} fixed={not use_scale} size={self.hr_upscale_to_x}x{self.hr_upscale_to_y}')
 
 
 def switch_class(p: StableDiffusionProcessing, new_class: type, dct: dict = None):

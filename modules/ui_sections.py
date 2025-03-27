@@ -1,12 +1,13 @@
 import gradio as gr
 from modules import shared, modelloader, ui_symbols, ui_common, sd_samplers
 from modules.ui_components import ToolButton
+from modules.interrogate import interrogate
 
 
 def create_toprow(is_img2img: bool = False, id_part: str = None):
     def apply_styles(prompt, prompt_neg, styles):
-        prompt = shared.prompt_styles.apply_styles_to_prompt(prompt, styles)
-        prompt_neg = shared.prompt_styles.apply_negative_styles_to_prompt(prompt_neg, styles)
+        prompt = shared.prompt_styles.apply_styles_to_prompt(prompt, styles, wildcards=not shared.opts.extra_networks_apply_unparsed)
+        prompt_neg = shared.prompt_styles.apply_negative_styles_to_prompt(prompt_neg, styles, wildcards=not shared.opts.extra_networks_apply_unparsed)
         return [gr.Textbox.update(value=prompt), gr.Textbox.update(value=prompt_neg), gr.Dropdown.update(value=[])]
 
 
@@ -19,11 +20,11 @@ def create_toprow(is_img2img: bool = False, id_part: str = None):
         with gr.Column(elem_id=f"{id_part}_prompt_container", scale=4):
             with gr.Row():
                 with gr.Column(scale=80):
-                    with gr.Row():
+                    with gr.Row(elem_id=f"{id_part}_prompt_row"):
                         prompt = gr.Textbox(elem_id=f"{id_part}_prompt", label="Prompt", show_label=False, lines=3, placeholder="Prompt", elem_classes=["prompt"])
             with gr.Row():
                 with gr.Column(scale=80):
-                    with gr.Row():
+                    with gr.Row(elem_id=f"{id_part}_negative_row"):
                         negative_prompt = gr.Textbox(elem_id=f"{id_part}_neg_prompt", label="Negative prompt", show_label=False, lines=3, placeholder="Negative prompt", elem_classes=["prompt"])
         with gr.Column(scale=1, elem_id=f"{id_part}_actions_column"):
             with gr.Row(elem_id=f"{id_part}_generate_box"):
@@ -90,7 +91,14 @@ def create_resolution_inputs(tab):
     return width, height
 
 
-def create_interrogate_buttons(tab):
+def create_interrogate_button(tab: str, inputs: list = None, outputs: str = None):
+    button_interrogate = gr.Button(ui_symbols.interrogate, elem_id=f"{tab}_interrogate", elem_classes=['interrogate'])
+    if inputs is not None and outputs is not None:
+        button_interrogate.click(fn=interrogate.interrogate, inputs=inputs, outputs=[outputs])
+    return button_interrogate
+
+
+def create_interrogate_buttons(tab): # legacy function
     button_interrogate = gr.Button(ui_symbols.int_clip, elem_id=f"{tab}_interrogate", elem_classes=['interrogate-clip'])
     button_deepbooru = gr.Button(ui_symbols.int_blip, elem_id=f"{tab}_deepbooru", elem_classes=['interrogate-blip'])
     return button_interrogate, button_deepbooru
@@ -161,9 +169,10 @@ def create_cfg_inputs(tab):
 def create_advanced_inputs(tab, base=True):
     with gr.Accordion(open=False, label="Advanced", elem_id=f"{tab}_advanced", elem_classes=["small-accordion"]):
         with gr.Group():
+            with gr.Row(elem_id=f"{tab}_vae_options"):
+                vae_type = gr.Dropdown(label='VAE type', choices=['Full', 'Tiny', 'Remote'], value='Full', elem_id=f"{tab}_vae_type")
             with gr.Row(elem_id=f"{tab}_advanced_options"):
-                full_quality = gr.Checkbox(label='Full quality', value=True, elem_id=f"{tab}_full_quality")
-                tiling = gr.Checkbox(label='Tiling', value=False, elem_id=f"{tab}_tiling")
+                tiling = gr.Checkbox(label='Texture tiling', value=False, elem_id=f"{tab}_tiling")
                 hidiffusion = gr.Checkbox(label='HiDiffusion', value=False, elem_id=f"{tab}_hidiffusion")
             if base:
                 cfg_scale, cfg_end = create_cfg_inputs(tab)
@@ -177,7 +186,7 @@ def create_advanced_inputs(tab, base=True):
                 diffusers_pag_adaptive = gr.Slider(minimum=0.0, maximum=1.0, step=0.05, label='Adaptive scaling', value=0.5, elem_id=f"{tab}_pag_adaptive", visible=shared.native)
             with gr.Row():
                 clip_skip = gr.Slider(label='CLIP skip', value=1, minimum=0, maximum=12, step=0.1, elem_id=f"{tab}_clip_skip", interactive=True)
-    return full_quality, tiling, hidiffusion, cfg_scale, clip_skip, image_cfg_scale, diffusers_guidance_rescale, diffusers_pag_scale, diffusers_pag_adaptive, cfg_end
+    return vae_type, tiling, hidiffusion, cfg_scale, clip_skip, image_cfg_scale, diffusers_guidance_rescale, diffusers_pag_scale, diffusers_pag_adaptive, cfg_end
 
 
 def create_correction_inputs(tab):
@@ -323,14 +332,6 @@ def create_hires_inputs(tab):
         with gr.Group():
             with gr.Row(elem_id=f"{tab}_hires_row1"):
                 enable_hr = gr.Checkbox(label='Enable refine pass', value=False, elem_id=f"{tab}_enable_hr")
-            """
-            with gr.Row(elem_id=f"{tab}_hires_fix_row1", variant="compact"):
-                hr_upscaler = gr.Dropdown(label="Upscaler", elem_id=f"{tab}_hr_upscaler", choices=[*shared.latent_upscale_modes, *[x.name for x in shared.sd_upscalers]], value=shared.latent_upscale_default_mode)
-                hr_scale = gr.Slider(minimum=0.1, maximum=8.0, step=0.05, label="Rescale by", value=2.0, elem_id=f"{tab}_hr_scale")
-            with gr.Row(elem_id=f"{tab}_hires_fix_row3", variant="compact"):
-                hr_resize_x = gr.Slider(minimum=0, maximum=4096, step=8, label="Width resize", value=0, elem_id=f"{tab}_hr_resize_x")
-                hr_resize_y = gr.Slider(minimum=0, maximum=4096, step=8, label="Height resize", value=0, elem_id=f"{tab}_hr_resize_y")
-            """
             hr_resize_mode, hr_upscaler, hr_resize_context, hr_resize_x, hr_resize_y, hr_scale, _selected_scale_tab = create_resize_inputs(tab, None, accordion=False, latent=True, non_zero=False)
             with gr.Row(elem_id=f"{tab}_hires_fix_row2", variant="compact"):
                 hr_force = gr.Checkbox(label='Force HiRes', value=False, elem_id=f"{tab}_hr_force")
@@ -355,8 +356,11 @@ def create_resize_inputs(tab, images, accordion=True, latent=False, non_zero=Tru
         prefix = f' {prefix}'
     with gr.Accordion(open=False, label="Resize", elem_classes=["small-accordion"], elem_id=f"{tab}_resize_group") if accordion else gr.Group():
         with gr.Row():
+            available_upscalers = [x.name for x in shared.sd_upscalers]
+            if not latent:
+                available_upscalers = [x for x in available_upscalers if not x.lower().startswith('latent')]
             resize_mode = gr.Dropdown(label=f"Mode{prefix}" if non_zero else "Resize mode", elem_id=f"{tab}_resize_mode", choices=shared.resize_modes, type="index", value='Fixed')
-            resize_name = gr.Dropdown(label=f"Method{prefix}", elem_id=f"{tab}_resize_name", choices=([] if not latent else list(shared.latent_upscale_modes)) + [x.name for x in shared.sd_upscalers], value=shared.latent_upscale_default_mode, visible=True)
+            resize_name = gr.Dropdown(label=f"Method{prefix}" if non_zero else "Resize method", elem_id=f"{tab}_resize_name", choices=available_upscalers, value=available_upscalers[0], visible=True)
             resize_context_choices = ["Add with forward", "Remove with forward", "Add with backward", "Remove with backward"]
             resize_context = gr.Dropdown(label=f"Context{prefix}", elem_id=f"{tab}_resize_context", choices=resize_context_choices, value=resize_context_choices[0], visible=False)
             ui_common.create_refresh_button(resize_name, modelloader.load_upscalers, lambda: {"choices": modelloader.load_upscalers()}, 'refresh_upscalers')

@@ -89,8 +89,6 @@ def save_files(js_data, files, html_info, index):
 
     class PObject: # pylint: disable=too-few-public-methods
         def __init__(self, d=None):
-            # 'Parser': 'Full parser', 'Model': 'lyriel_v16', 'Model hash': 'ec6f68ea63', 'Backend': 'Diffusers', 'App': 'SD.Next', 'Version': '69d7fef', 'Operations': 'txt2img', 'Sampler options': 'order 2/low order', 'Pipeline': 'StableDiffusionPipeline'
-            # <pre>seq, uuid<br>date, datetime, job_timestamp<br>generation_number, batch_number<br>model, model_shortname<br>model_hash, model_name<br>sampler, seed, steps, cfg<br>clip_skip, denoising<br>hasprompt, prompt, styles<br>prompt_hash, prompt_no_styles<br>prompt_spaces, prompt_words<br>height, width, image_hash<br></pre>
             if d is not None:
                 for k, v in d.items():
                     setattr(self, k, v)
@@ -221,19 +219,20 @@ def open_folder(result_gallery, gallery_index = 0):
             subprocess.Popen(["xdg-open", path]) # pylint: disable=consider-using-with
 
 
-def interrogate_clip(image):
+def interrogate_clip(image): # legacy function
     if image is None:
         shared.log.error("Interrogate: no image selected")
         return gr.update()
-    prompt = shared.interrogator.interrogate(image)
+    from modules.interrogate import openclip
+    prompt = openclip.interrogator.interrogate(image)
     return gr.update() if prompt is None else prompt
 
 
-def interrogate_booru(image):
+def interrogate_booru(image): # legacy function
     if image is None:
         shared.log.error("Interrogate: no image selected")
         return gr.update()
-    from modules import deepbooru
+    from modules.interrogate import deepbooru
     prompt = deepbooru.model.tag(image)
     return gr.update() if prompt is None else prompt
 
@@ -258,10 +257,7 @@ def create_output_panel(tabname, preview=True, prompt=None, height=None):
                                         elem_classes=["gallery_main"],
                                        )
             if prompt is not None:
-                interrogate_clip_btn, interrogate_booru_btn = ui_sections.create_interrogate_buttons('control')
-                interrogate_clip_btn.click(fn=interrogate_clip, inputs=[result_gallery], outputs=[prompt])
-                interrogate_booru_btn.click(fn=interrogate_booru, inputs=[result_gallery], outputs=[prompt])
-
+                ui_sections.create_interrogate_button(tab=tabname, inputs=result_gallery, outputs=prompt)
 
         with gr.Column(elem_id=f"{tabname}_footer", elem_classes="gallery_footer"):
             dummy_component = gr.Label(visible=False)
@@ -277,7 +273,7 @@ def create_output_panel(tabname, preview=True, prompt=None, height=None):
                 if not shared.native:
                     buttons = generation_parameters_copypaste.create_buttons(["img2img", "inpaint", "extras"])
                 else:
-                    buttons = generation_parameters_copypaste.create_buttons(["txt2img", "img2img", "control", "extras"])
+                    buttons = generation_parameters_copypaste.create_buttons(["txt2img", "img2img", "control", "extras", "caption"])
 
             download_files = gr.File(None, file_count="multiple", interactive=False, show_label=False, visible=False, elem_id=f'download_files_{tabname}')
             with gr.Group():

@@ -4,7 +4,7 @@ import time
 from contextlib import nullcontext
 import numpy as np
 from PIL import Image, ImageOps
-from modules import shared, devices, errors, images, scripts, memstats, lowvram, script_callbacks, extra_networks, detailer, sd_hijack_freeu, sd_models, sd_checkpoint, sd_vae, processing_helpers, timer, face_restoration, token_merge
+from modules import shared, devices, errors, images, scripts, memstats, lowvram, script_callbacks, extra_networks, detailer, sd_models, sd_checkpoint, sd_vae, processing_helpers, timer, face_restoration, token_merge
 from modules.sd_hijack_hypertile import context_hypertile_vae, context_hypertile_unet
 from modules.processing_class import StableDiffusionProcessing, StableDiffusionProcessingTxt2Img, StableDiffusionProcessingImg2Img, StableDiffusionProcessingControl # pylint: disable=unused-import
 from modules.processing_info import create_infotext
@@ -151,7 +151,7 @@ def process_images(p: StableDiffusionProcessing) -> Processed:
             sd_models.reload_model_weights()
         if p.override_settings.get('sd_vae', None) is not None:
             if p.override_settings.get('sd_vae', None) == 'TAESD':
-                p.full_quality = False
+                p.vae_type = 'Tiny'
                 p.override_settings.pop('sd_vae', None)
         if p.override_settings.get('Hires upscaler', None) is not None:
             p.enable_hr = True
@@ -168,7 +168,9 @@ def process_images(p: StableDiffusionProcessing) -> Processed:
         shared.prompt_styles.extract_comments(p)
         if shared.opts.cuda_compile_backend == 'none':
             token_merge.apply_token_merging(p.sd_model)
+            from modules import sd_hijack_freeu, para_attention
             sd_hijack_freeu.apply_freeu(p, not shared.native)
+            para_attention.apply_first_block_cache(p)
 
         if p.width is not None:
             p.width = 8 * int(p.width / 8)
@@ -186,6 +188,8 @@ def process_images(p: StableDiffusionProcessing) -> Processed:
                 activities=[torch.profiler.ProfilerActivity.CPU]
                 if torch.cuda.is_available():
                     activities.append(torch.profiler.ProfilerActivity.CUDA)
+                if devices.has_xpu() and hasattr(torch.profiler.ProfilerActivity, "XPU"):
+                    activities.append(torch.profiler.ProfilerActivity.XPU)
                 shared.log.debug(f'Torch profile: activities={activities}')
                 if shared.profiler is None:
                     profile_args = {
@@ -258,9 +262,10 @@ def process_init(p: StableDiffusionProcessing):
         else:
             p.all_subseeds = [int(subseed) + x for x in range(len(p.all_prompts))]
     if reset_prompts:
-        p.all_prompts, p.all_negative_prompts = shared.prompt_styles.apply_styles_to_prompts(p.all_prompts, p.all_negative_prompts, p.styles, p.all_seeds)
-        p.prompts = p.all_prompts[p.iteration * p.batch_size:(p.iteration+1) * p.batch_size]
-        p.negative_prompts = p.all_negative_prompts[p.iteration * p.batch_size:(p.iteration+1) * p.batch_size]
+        if not hasattr(p, 'keep_prompts'):
+            p.all_prompts, p.all_negative_prompts = shared.prompt_styles.apply_styles_to_prompts(p.all_prompts, p.all_negative_prompts, p.styles, p.all_seeds)
+            p.prompts = p.all_prompts[p.iteration * p.batch_size:(p.iteration+1) * p.batch_size]
+            p.negative_prompts = p.all_negative_prompts[p.iteration * p.batch_size:(p.iteration+1) * p.batch_size]
         p.prompts, _ = extra_networks.parse_prompts(p.prompts)
 
 
@@ -310,8 +315,9 @@ def process_images_inner(p: StableDiffusionProcessing) -> Processed:
             if shared.native:
                 from modules import ipadapter
                 ipadapter.apply(shared.sd_model, p)
-            p.prompts = p.all_prompts[n * p.batch_size:(n+1) * p.batch_size]
-            p.negative_prompts = p.all_negative_prompts[n * p.batch_size:(n+1) * p.batch_size]
+            if not hasattr(p, 'keep_prompts'):
+                p.prompts = p.all_prompts[n * p.batch_size:(n+1) * p.batch_size]
+                p.negative_prompts = p.all_negative_prompts[n * p.batch_size:(n+1) * p.batch_size]
             p.seeds = p.all_seeds[n * p.batch_size:(n+1) * p.batch_size]
             p.subseeds = p.all_subseeds[n * p.batch_size:(n+1) * p.batch_size]
             if p.scripts is not None and isinstance(p.scripts, scripts.ScriptRunner):

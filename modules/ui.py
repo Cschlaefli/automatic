@@ -151,6 +151,11 @@ def create_ui(startup_timer = None):
         ui_postprocessing.create_ui()
         timer.startup.record("ui-extras")
 
+    with gr.Blocks(analytics_enabled=False) as caption_interface:
+        from modules import ui_caption
+        ui_caption.create_ui()
+        timer.startup.record("ui-caption")
+
     with gr.Blocks(analytics_enabled=False) as models_interface:
         from modules import ui_models
         ui_models.create_ui()
@@ -250,9 +255,6 @@ def create_ui(startup_timer = None):
             if "Model" not in shared.opts.cuda_compile:
                 shared.log.warning("OpenVINO: Enabling Torch Compile Model")
                 shared.opts.cuda_compile.append("Model")
-            if "VAE" not in shared.opts.cuda_compile:
-                shared.log.warning("OpenVINO: Enabling Torch Compile VAE")
-                shared.opts.cuda_compile.append("VAE")
             if shared.opts.cuda_compile_backend != "openvino_fx":
                 shared.log.warning("OpenVINO: Setting Torch Compiler backend to OpenVINO FX")
                 shared.opts.cuda_compile_backend = "openvino_fx"
@@ -314,7 +316,13 @@ def create_ui(startup_timer = None):
                     for i, (k, item) in enumerate(opts.data_labels.items()):
                         section_must_be_skipped = item.section[0] is None
                         if previous_section != item.section and not section_must_be_skipped:
-                            elem_id, text = item.section
+                            if len(item.section) == 2:
+                                elem_id, text = item.section
+                            elif len(item.section) == 3:
+                                _category, elem_id, text = item.section
+                            else:
+                                shared.log.error(f'Settings: section={item.section} invalid')
+                                continue
                             if current_tab is not None and len(previous_section) > 0:
                                 create_dirty_indicator(previous_section[0], tab_item_keys)
                                 tab_item_keys = []
@@ -392,6 +400,7 @@ def create_ui(startup_timer = None):
     interfaces += [(img2img_interface, "Image", "img2img")]
     interfaces += [(control_interface, "Control", "control")] if control_interface is not None else []
     interfaces += [(extras_interface, "Process", "process")]
+    interfaces += [(caption_interface, "Caption", "caption")]
     interfaces += [(gallery_interface, "Gallery", "gallery")]
     interfaces += [(models_interface, "Models", "models")]
     interfaces += script_callbacks.ui_tabs_callback()

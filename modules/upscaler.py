@@ -8,9 +8,8 @@ from modules import devices, modelloader, shared
 from installer import setup_logging
 
 
-LANCZOS = (Image.Resampling.LANCZOS if hasattr(Image, 'Resampling') else Image.Resampling.LANCZOS)
-NEAREST = (Image.Resampling.NEAREST if hasattr(Image, 'Resampling') else Image.Resampling.NEAREST)
 models = None
+
 
 class Upscaler:
     name = None
@@ -97,17 +96,24 @@ class Upscaler:
         orig_state = copy.deepcopy(shared.state)
         shared.state.begin('Upscale')
         self.scale = scale
-        dest_w = int(img.width * scale)
-        dest_h = int(img.height * scale)
-        for _ in range(3):
-            shape = (img.width, img.height)
+        if isinstance(img, Image.Image):
+            dest_w = int(img.width * scale)
+            dest_h = int(img.height * scale)
+        else:
+            dest_w = int(img.shape[-1] * scale)
+            dest_h = int(img.shape[-2] * scale)
+        if self.name.lower().startswith('latent'):
             img = self.do_upscale(img, selected_model)
-            if shape == (img.width, img.height):
-                break
-            if img.width >= dest_w and img.height >= dest_h:
-                break
-        if img.width != dest_w or img.height != dest_h:
-            img = img.resize((int(dest_w), int(dest_h)), resample=LANCZOS)
+        else:
+            for _ in range(3):
+                shape = (img.width, img.height)
+                img = self.do_upscale(img, selected_model)
+                if shape == (img.width, img.height):
+                    break
+                if img.width >= dest_w and img.height >= dest_h:
+                    break
+            if img.width != dest_w or img.height != dest_h:
+                img = img.resize((int(dest_w), int(dest_h)), resample=Image.Resampling.LANCZOS)
         shared.state.end()
         shared.state = orig_state
         return img
@@ -125,7 +131,7 @@ class Upscaler:
     def find_model(self, path):
         info = None
         for scaler in self.scalers:
-            if scaler.data_path == path:
+            if (scaler.data_path == path) or (scaler.name == path):
                 info = scaler
                 break
         if info is None:
@@ -157,50 +163,6 @@ class UpscalerData:
         self.model = model
 
 
-class UpscalerNone(Upscaler):
-    name = "None"
-    scalers = []
-
-    def load_model(self, path):
-        pass
-
-    def do_upscale(self, img, selected_model=None):
-        return img
-
-    def __init__(self, dirname=None): # pylint: disable=unused-argument
-        super().__init__(False)
-        self.scalers = [UpscalerData("None", None, self)]
-
-
-class UpscalerLanczos(Upscaler):
-    scalers = []
-
-    def do_upscale(self, img, selected_model=None):
-        return img.resize((int(img.width * self.scale), int(img.height * self.scale)), resample=LANCZOS)
-
-    def load_model(self, _):
-        pass
-
-    def __init__(self, dirname=None): # pylint: disable=unused-argument
-        super().__init__(False)
-        self.name = "Lanczos"
-        self.scalers = [UpscalerData("Lanczos", None, self)]
-
-
-class UpscalerNearest(Upscaler):
-    scalers = []
-
-    def do_upscale(self, img, selected_model=None):
-        return img.resize((int(img.width * self.scale), int(img.height * self.scale)), resample=NEAREST)
-
-    def load_model(self, _):
-        pass
-
-    def __init__(self, dirname=None): # pylint: disable=unused-argument
-        super().__init__(False)
-        self.name = "Nearest"
-        self.scalers = [UpscalerData("Nearest", None, self)]
-
 def compile_upscaler(model):
     try:
         if shared.opts.ipex_optimize and "Upscaler" in shared.opts.ipex_optimize:
@@ -225,7 +187,9 @@ def compile_upscaler(model):
 
             if shared.opts.cuda_compile_backend == "openvino_fx":
                 from modules.intel.openvino import openvino_fx # pylint: disable=unused-import
-                torch._dynamo.eval_frame.check_if_dynamo_supported = lambda: True # pylint: disable=protected-access
+                if shared.compiled_model_state is None:
+                    from modules.sd_models_compile import CompiledModelState
+                    shared.compiled_model_state = CompiledModelState()
 
             log_level = logging.WARNING if shared.opts.cuda_compile_verbose else logging.CRITICAL # pylint: disable=protected-access
             if hasattr(torch, '_logging'):
@@ -244,7 +208,12 @@ def compile_upscaler(model):
                 shared.log.error(f"Torch inductor config error: {e}")
 
             t0 = time.time()
-            model = torch.compile(model, mode=shared.opts.cuda_compile_mode, backend=shared.opts.cuda_compile_backend, fullgraph=shared.opts.cuda_compile_fullgraph) # pylint: disable=attribute-defined-outside-init
+            model = torch.compile(model,
+                mode=shared.opts.cuda_compile_mode,
+                backend=shared.opts.cuda_compile_backend,
+                fullgraph=shared.opts.cuda_compile_fullgraph,
+                dynamic=None if shared.opts.cuda_compile_backend != "openvino_fx" else False,
+            ) # pylint: disable=attribute-defined-outside-init
             setup_logging() # compile messes with logging so reset is needed
             t1 = time.time()
             shared.log.info(f"Upscaler compile: time={t1-t0:.2f}")

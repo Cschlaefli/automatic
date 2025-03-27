@@ -33,16 +33,21 @@ def return_stats(t: float = None):
     gpu = ''
     cpu = ''
     if not shared.mem_mon.disabled:
-        vram = {k: -(v//-(1024*1024)) for k, v in shared.mem_mon.read().items()}
+        mem_mon_read = shared.mem_mon.read()
+        ooms = mem_mon_read.pop("oom")
+        retries = mem_mon_read.pop("retries")
+        vram = {k: v//1048576 for k, v in mem_mon_read.items()}
         peak = max(vram['active_peak'], vram['reserved_peak'], vram['used'])
         used = round(100.0 * peak / vram['total']) if vram['total'] > 0 else 0
-        if used > 0:
-            gpu += f"| GPU {peak} MB {used}%"
-            gpu += f" | retries {vram['retries']} oom {vram['oom']}" if vram.get('retries', 0) > 0 or vram.get('oom', 0) > 0 else ''
-        ram = shared.ram_stats()
-        if ram['used'] > 0:
-            cpu += f"| RAM {ram['used']} GB {round(100.0 * ram['used'] / ram['total'])}%"
-    return f"<div class='performance'><p>Time: {elapsed_text} | {summary} {gpu} {cpu}</p></div>"
+        if peak > 0:
+            gpu += f"| GPU {peak} MB"
+            gpu += f" {used}%" if used > 0 else ''
+            gpu += f" | retries {retries} oom {ooms}" if retries > 0 or ooms > 0 else ''
+    ram = shared.ram_stats()
+    if ram['used'] > 0:
+        cpu += f"| RAM {ram['used']} GB"
+        cpu += f" {round(100.0 * ram['used'] / ram['total'])}%" if ram['total'] > 0 else ''
+    return f"<div class='performance'><p>{elapsed_text} {summary} {gpu} {cpu}</p></div>"
 
 
 def return_controls(res, t: float = None):
@@ -161,7 +166,7 @@ def create_ui(_blocks: gr.Blocks=None):
 
                 mask_controls = masking.create_segment_ui()
 
-                full_quality, tiling, hidiffusion, cfg_scale, clip_skip, image_cfg_scale, guidance_rescale, pag_scale, pag_adaptive, cfg_end = ui_sections.create_advanced_inputs('control')
+                vae_type, tiling, hidiffusion, cfg_scale, clip_skip, image_cfg_scale, guidance_rescale, pag_scale, pag_adaptive, cfg_end = ui_sections.create_advanced_inputs('control')
                 hdr_mode, hdr_brightness, hdr_color, hdr_sharpen, hdr_clamp, hdr_boundary, hdr_threshold, hdr_maximize, hdr_max_center, hdr_max_boundry, hdr_color_picker, hdr_tint_ratio = ui_sections.create_correction_inputs('control')
 
                 with gr.Accordion(open=False, label="Video", elem_id="control_video", elem_classes=["small-accordion"]):
@@ -191,7 +196,7 @@ def create_ui(_blocks: gr.Blocks=None):
                             input_image = gr.Image(label="Input", show_label=False, type="pil", source="upload", interactive=True, tool="editor", height=gr_height, visible=True, image_mode='RGB', elem_id='control_input_select', elem_classes=['control-image'])
                             input_resize = gr.Image(label="Input", show_label=False, type="pil", source="upload", interactive=True, tool="select", height=gr_height, visible=False, image_mode='RGB', elem_id='control_input_resize', elem_classes=['control-image'])
                             input_inpaint = gr.Image(label="Input", show_label=False, type="pil", source="upload", interactive=True, tool="sketch", height=gr_height, visible=False, image_mode='RGB', elem_id='control_input_inpaint', brush_radius=32, mask_opacity=0.6, elem_classes=['control-image'])
-                            btn_interrogate_clip, btn_interrogate_booru = ui_sections.create_interrogate_buttons('control')
+                            btn_interrogate = ui_sections.create_interrogate_button('control')
                             with gr.Row():
                                 input_buttons = [gr.Button('Select', visible=True, interactive=False), gr.Button('Inpaint', visible=True, interactive=True), gr.Button('Outpaint', visible=True, interactive=True)]
                         with gr.Tab('Video', id='in-video') as tab_video:
@@ -241,7 +246,7 @@ def create_ui(_blocks: gr.Blocks=None):
                             enabled = True if i==0 else False
                             with gr.Accordion(f'ControlNet unit {i+1}', visible= i < num_controlnet_units.value, elem_classes='control-unit') as unit_ui:
                                 with gr.Row():
-                                    enabled_cb = gr.Checkbox(enabled, label='', container=False, show_label=False, elem_id=f'control_unit-{i}-enabled')
+                                    enabled_cb = gr.Checkbox(enabled, label='Active', container=False, show_label=True, elem_id=f'control_unit-{i}-enabled')
                                     process_id = gr.Dropdown(label="Processor", choices=processors.list_models(), value='None', elem_id=f'control_unit-{i}-process_name')
                                     model_id = gr.Dropdown(label="ControlNet", choices=controlnet.list_models(), value='None', elem_id=f'control_unit-{i}-model_name')
                                     ui_common.create_refresh_button(model_id, controlnet.list_models, lambda: {"choices": controlnet.list_models(refresh=True)}, f'refresh_controlnet_models_{i}')
@@ -294,7 +299,7 @@ def create_ui(_blocks: gr.Blocks=None):
                             enabled = True if i==0 else False
                             with gr.Accordion(f'T2I-Adapter unit {i+1}', visible= i < num_adapter_units.value, elem_classes='control-unit') as unit_ui:
                                 with gr.Row():
-                                    enabled_cb = gr.Checkbox(enabled, label='', container=False, show_label=False, elem_id=f'control_unit-{i}-enabled')
+                                    enabled_cb = gr.Checkbox(enabled, label='Active', container=False, show_label=True, elem_id=f'control_unit-{i}-enabled')
                                     process_id = gr.Dropdown(label="Processor", choices=processors.list_models(), value='None', elem_id=f'control_unit-{i}-process_name')
                                     model_id = gr.Dropdown(label="Adapter", choices=t2iadapter.list_models(), value='None', elem_id=f'control_unit-{i}-model_name')
                                     ui_common.create_refresh_button(model_id, t2iadapter.list_models, lambda: {"choices": t2iadapter.list_models(refresh=True)}, f'refresh_adapter_models_{i}')
@@ -339,7 +344,7 @@ def create_ui(_blocks: gr.Blocks=None):
                             enabled = True if i==0 else False
                             with gr.Accordion(f'ControlNet-XS unit {i+1}', visible= i < num_controlnet_units.value, elem_classes='control-unit') as unit_ui:
                                 with gr.Row():
-                                    enabled_cb = gr.Checkbox(enabled, label='', container=False, show_label=False, elem_id=f'control_unit-{i}-enabled')
+                                    enabled_cb = gr.Checkbox(enabled, label='Active', container=False, show_label=True, elem_id=f'control_unit-{i}-enabled')
                                     process_id = gr.Dropdown(label="Processor", choices=processors.list_models(), value='None', elem_id=f'control_unit-{i}-process_name')
                                     model_id = gr.Dropdown(label="ControlNet-XS", choices=xs.list_models(), value='None', elem_id=f'control_unit-{i}-model_name')
                                     ui_common.create_refresh_button(model_id, xs.list_models, lambda: {"choices": xs.list_models(refresh=True)}, f'refresh_xs_models_{i}')
@@ -387,7 +392,7 @@ def create_ui(_blocks: gr.Blocks=None):
                             enabled = True if i==0 else False
                             with gr.Accordion(f'Control-LLLite unit {i+1}', visible= i < num_lite_units.value, elem_classes='control-unit') as unit_ui:
                                 with gr.Row():
-                                    enabled_cb = gr.Checkbox(enabled, label='', container=False, show_label=False, elem_id=f'control_unit-{i}-enabled')
+                                    enabled_cb = gr.Checkbox(enabled, label='Active', container=False, show_label=True, elem_id=f'control_unit-{i}-enabled')
                                     process_id = gr.Dropdown(label="Processor", choices=processors.list_models(), value='None', elem_id=f'control_unit-{i}-process_name')
                                     model_id = gr.Dropdown(label="Model", choices=lite.list_models(), value='None', elem_id=f'control_unit-{i}-model_name')
                                     ui_common.create_refresh_button(model_id, lite.list_models, lambda: {"choices": lite.list_models(refresh=True)}, f'refresh_lite_models_{i}')
@@ -433,7 +438,7 @@ def create_ui(_blocks: gr.Blocks=None):
                             enabled = True if i==0 else False
                             with gr.Accordion(f'Reference unit {i+1}', visible=True, elem_classes='control-unit') as unit_ui:
                                 with gr.Row():
-                                    enabled_cb = gr.Checkbox(enabled, label='', container=False, show_label=False, elem_id=f'control_unit-{i}-enabled')
+                                    enabled_cb = gr.Checkbox(enabled, label='Active', container=False, show_label=True, elem_id=f'control_unit-{i}-enabled')
                                     model_id = gr.Dropdown(label="Reference", choices=reference.list_models(), value='Reference', visible=False, elem_id=f'control_unit-{i}-model_name')
                                     model_strength = gr.Slider(label="CN Strength", minimum=0.01, maximum=1.0, step=0.01, value=1.0, visible=False, elem_id=f'control_unit-{i}-strength')
                                     reset_btn = ui_components.ToolButton(value=ui_symbols.reset)
@@ -530,8 +535,7 @@ def create_ui(_blocks: gr.Blocks=None):
             input_type.change(fn=lambda x: gr.update(visible=x == 2), inputs=[input_type], outputs=[column_init])
             btn_prompt_counter.click(fn=call_queue.wrap_queued_call(ui_common.update_token_counter), inputs=[prompt, steps], outputs=[prompt_counter])
             btn_negative_counter.click(fn=call_queue.wrap_queued_call(ui_common.update_token_counter), inputs=[negative, steps], outputs=[negative_counter])
-            btn_interrogate_clip.click(fn=helpers.interrogate_clip, inputs=[], outputs=[prompt])
-            btn_interrogate_booru.click(fn=helpers.interrogate_booru, inputs=[], outputs=[prompt])
+            btn_interrogate.click(fn=helpers.interrogate, inputs=[], outputs=[prompt])
 
             select_fields = [input_mode, input_image, init_image, input_type, input_resize, input_inpaint, input_video, input_batch, input_folder]
             select_output = [output_tabs, preview_process, result_txt]
@@ -562,7 +566,7 @@ def create_ui(_blocks: gr.Blocks=None):
                 prompt, negative, styles,
                 steps, sampler_index,
                 seed, subseed, subseed_strength, seed_resize_from_h, seed_resize_from_w,
-                cfg_scale, clip_skip, image_cfg_scale, guidance_rescale, pag_scale, pag_adaptive, cfg_end, full_quality, tiling, hidiffusion,
+                cfg_scale, clip_skip, image_cfg_scale, guidance_rescale, pag_scale, pag_adaptive, cfg_end, vae_type, tiling, hidiffusion,
                 detailer_enabled, detailer_prompt, detailer_negative, detailer_steps, detailer_strength,
                 hdr_mode, hdr_brightness, hdr_color, hdr_sharpen, hdr_clamp, hdr_boundary, hdr_threshold, hdr_maximize, hdr_max_center, hdr_max_boundry, hdr_color_picker, hdr_tint_ratio,
                 resize_mode_before, resize_name_before, resize_context_before, width_before, height_before, scale_by_before, selected_scale_tab_before,
@@ -647,7 +651,7 @@ def create_ui(_blocks: gr.Blocks=None):
                 (image_cfg_scale, "Image CFG scale"),
                 (image_cfg_scale, "Hires CFG scale"),
                 (guidance_rescale, "CFG rescale"),
-                (full_quality, "Full quality"),
+                (vae_type, "VAE type"),
                 (tiling, "Tiling"),
                 (hidiffusion, "HiDiffusion"),
                 # detailer

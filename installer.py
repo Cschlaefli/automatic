@@ -4,6 +4,8 @@ import sys
 import json
 import time
 import shutil
+import locale
+import socket
 import logging
 import platform
 import subprocess
@@ -25,6 +27,7 @@ console = None
 debug = log.debug if os.environ.get('SD_INSTALL_DEBUG', None) is not None else lambda *args, **kwargs: None
 pip_log = '--log pip.log ' if os.environ.get('SD_PIP_DEBUG', None) is not None else ''
 log_file = os.path.join(os.path.dirname(__file__), 'sdnext.log')
+hostname = socket.gethostname()
 log_rolled = False
 first_call = True
 quick_allowed = True
@@ -53,11 +56,16 @@ args = Dot({
 })
 git_commit = "unknown"
 diffusers_commit = "unknown"
-extensions_commit = {
+extensions_commit = { # force specific commit for extensions
     'sd-webui-controlnet': 'ecd33eb',
     'adetailer': 'a89c01d'
     # 'stable-diffusion-webui-images-browser': '27fe4a7',
 }
+control_extensions = [ # 3rd party extensions marked as safe for control ui
+    'NudeNet',
+    'IP Adapters',
+    'Remove background',
+]
 
 
 try:
@@ -65,6 +73,32 @@ try:
     ts = init.ts
 except Exception:
     ts = lambda *args, **kwargs: None # pylint: disable=unnecessary-lambda-assignment
+
+
+def get_console():
+    return console
+
+
+def get_log():
+    return log
+
+
+def install_traceback(suppress: list = []):
+    from rich.traceback import install as traceback_install
+    from rich.pretty import install as pretty_install
+    traceback_install(
+        console=console,
+        extra_lines=os.environ.get('SD_TRACELINES', 1),
+        max_frames=os.environ.get('SD_TRACEFRAMES', 16),
+        width=os.environ.get('SD_TRACEWIDTH', console.width),
+        word_wrap=os.environ.get('SD_TRACEWRAP', False),
+        indent_guides=os.environ.get('SD_TRACEINDENT', False),
+        show_locals=os.environ.get('SD_TRACELOCALS', False),
+        locals_hide_dunder=os.environ.get('SD_TRACEDUNDER', True),
+        locals_hide_sunder=os.environ.get('SD_TRACESUNDER', None),
+        suppress=suppress,
+    )
+    pretty_install(console=console)
 
 
 # setup console and file logging
@@ -101,7 +135,6 @@ def setup_logging():
     from rich.console import Console
     from rich import print as rprint
     from rich.pretty import install as pretty_install
-    from rich.traceback import install as traceback_install
 
     if args.log:
         global log_file # pylint: disable=global-statement
@@ -116,17 +149,25 @@ def setup_logging():
     log.setLevel(logging.DEBUG) # log to file is always at level debug for facility `sd`
     log.print = rprint
     global console # pylint: disable=global-statement
-    console = Console(log_time=True, log_time_format='%H:%M:%S-%f', theme=Theme({
+    theme = Theme({
         "traceback.border": "black",
         "traceback.border.syntax_error": "black",
         "inspect.value.border": "black",
         "logging.level.info": "blue_violet",
         "logging.level.debug": "purple4",
         "logging.level.trace": "dark_blue",
-    }))
+    })
+    console = Console(
+        log_time=True,
+        log_time_format='%H:%M:%S-%f',
+        tab_size=4,
+        soft_wrap=True,
+        safe_box=True,
+        theme=theme,
+    )
     logging.basicConfig(level=logging.ERROR, format='%(asctime)s | %(name)s | %(levelname)s | %(module)s | %(message)s', handlers=[logging.NullHandler()]) # redirect default logger to null
     pretty_install(console=console)
-    traceback_install(console=console, extra_lines=1, max_frames=16, width=console.width, word_wrap=False, indent_guides=False, suppress=[])
+    install_traceback()
     while log.hasHandlers() and len(log.handlers) > 0:
         log.removeHandler(log.handlers[0])
 
@@ -141,7 +182,7 @@ def setup_logging():
         fh.doRollover()
         log_rolled = True
 
-    fh.formatter = logging.Formatter('%(asctime)s | %(name)s | %(levelname)s | %(module)s | %(message)s')
+    fh.formatter = logging.Formatter(f'%(asctime)s | {hostname} | %(name)s | %(levelname)s | %(module)s | %(message)s')
     fh.setLevel(logging.DEBUG)
     log.addHandler(fh)
 
@@ -168,7 +209,7 @@ def setup_logging():
 
 def get_logfile():
     log_size = os.path.getsize(log_file) if os.path.exists(log_file) else 0
-    log.info(f'Logger: file="{log_file}" level={logging.getLevelName(logging.DEBUG if args.debug else logging.INFO)} size={log_size} mode={"append" if not log_rolled else "create"}')
+    log.info(f'Logger: file="{os.path.abspath(log_file)}" level={logging.getLevelName(logging.DEBUG if args.debug else logging.INFO)} host="{hostname}" size={log_size} mode={"append" if not log_rolled else "create"}')
     return log_file
 
 
@@ -216,7 +257,7 @@ def package_spec(package):
 
 # check if package is installed
 @lru_cache()
-def installed(package, friendly: str = None, reload = False, quiet = False):
+def installed(package, friendly: str = None, reload = False, quiet = False): # pylint: disable=redefined-outer-name
     t_start = time.time()
     ok = True
     try:
@@ -273,6 +314,16 @@ def uninstall(package, quiet = False):
     return res
 
 
+def run(cmd: str, arg: str):
+    result = subprocess.run(f'"{cmd}" {arg}', shell=True, check=False, env=os.environ, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    txt = result.stdout.decode(encoding="utf8", errors="ignore")
+    if len(result.stderr) > 0:
+        txt += ('\n' if len(txt) > 0 else '') + result.stderr.decode(encoding="utf8", errors="ignore")
+    txt = txt.strip()
+    debug(f'Exec {cmd}: {txt}')
+    return txt
+
+
 @lru_cache()
 def pip(arg: str, ignore: bool = False, quiet: bool = True, uv = True):
     t_start = time.time()
@@ -309,15 +360,16 @@ def pip(arg: str, ignore: bool = False, quiet: bool = True, uv = True):
 
 # install package using pip if not already installed
 @lru_cache()
-def install(package, friendly: str = None, ignore: bool = False, reinstall: bool = False, no_deps: bool = False, quiet: bool = False):
+def install(package, friendly: str = None, ignore: bool = False, reinstall: bool = False, no_deps: bool = False, quiet: bool = False, force: bool = False):
     t_start = time.time()
     res = ''
     if args.reinstall or args.upgrade:
         global quick_allowed # pylint: disable=global-statement
         quick_allowed = False
-    if args.reinstall or reinstall or not installed(package, friendly, quiet=quiet):
+    if (args.reinstall) or (reinstall) or (not installed(package, friendly, quiet=quiet)):
         deps = '' if not no_deps else '--no-deps '
-        res = pip(f"install{' --upgrade' if not args.uv else ''} {deps}{package}", ignore=ignore, uv=package != "uv" and not package.startswith('git+'))
+        cmd = f"install{' --upgrade' if not args.uv else ''}{' --force' if force else ''} {deps}{package}"
+        res = pip(cmd, ignore=ignore, uv=package != "uv" and not package.startswith('git+'))
         try:
             importlib.reload(pkg_resources)
         except Exception:
@@ -328,13 +380,12 @@ def install(package, friendly: str = None, ignore: bool = False, reinstall: bool
 
 # execute git command
 @lru_cache()
-def git(arg: str, folder: str = None, ignore: bool = False, optional: bool = False):
+def git(arg: str, folder: str = None, ignore: bool = False, optional: bool = False): # pylint: disable=unused-argument
     t_start = time.time()
     if args.skip_git:
         return ''
-    if optional:
-        if 'google.colab' in sys.modules:
-            return ''
+    if 'google.colab' in sys.modules:
+        return ''
     git_cmd = os.environ.get('GIT', "git")
     if git_cmd != "git":
         git_cmd = os.path.abspath(git_cmd)
@@ -447,7 +498,8 @@ def get_platform():
             'system': platform.system(),
             'release': release,
             'python': platform.python_version(),
-            'docker': os.environ.get('SD_INSTALL_DEBUG', None) is not None,
+            'locale': locale.getlocale(),
+            'docker': os.environ.get('SD_DOCKER', None) is not None,
             # 'host': platform.node(),
             # 'version': platform.version(),
         }
@@ -461,12 +513,6 @@ def check_python(supported_minors=[9, 10, 11, 12], reason=None):
     if args.quick:
         return
     log.info(f'Python: version={platform.python_version()} platform={platform.system()} bin="{sys.executable}" venv="{sys.prefix}"')
-    if int(sys.version_info.major) == 3 and int(sys.version_info.minor) == 12 and int(sys.version_info.micro) > 3: # TODO install: python 3.12.4 or higher cause a mess with pydantic
-        log.error(f"Python version incompatible: {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro} required 3.12.3 or lower")
-        if reason is not None:
-            log.error(reason)
-        if not args.ignore:
-            sys.exit(1)
     if not (int(sys.version_info.major) == 3 and int(sys.version_info.minor) in supported_minors):
         log.error(f"Python version incompatible: {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro} required 3.{supported_minors}")
         if reason is not None:
@@ -492,7 +538,7 @@ def check_diffusers():
     t_start = time.time()
     if args.skip_all or args.skip_git:
         return
-    sha = 'b785ddb654e4be3ae0066e231734754bdb2a191c' # diffusers commit hash
+    sha = 'b75b204a584e29ebf4e80a61be11458e9ed56e3e' # diffusers commit hash
     pkg = pkg_resources.working_set.by_key.get('diffusers', None)
     minor = int(pkg.version.split('.')[1] if pkg is not None else 0)
     cur = opts.get('diffusers_version', '') if minor > 0 else ''
@@ -516,7 +562,7 @@ def check_onnx():
     if not installed('onnx', quiet=True):
         install('onnx', 'onnx', ignore=True)
     if not installed('onnxruntime', quiet=True) and not (installed('onnxruntime-gpu', quiet=True) or installed('onnxruntime-openvino', quiet=True) or installed('onnxruntime-training', quiet=True)): # allow either
-        install('onnxruntime', 'onnxruntime', ignore=True)
+        install(os.environ.get('ONNXRUNTIME_COMMAND', 'onnxruntime'), ignore=True)
     ts('onnx', t_start)
 
 
@@ -524,20 +570,24 @@ def install_cuda():
     t_start = time.time()
     log.info('CUDA: nVidia toolkit detected')
     ts('cuda', t_start)
-    return os.environ.get('TORCH_COMMAND', 'torch==2.5.1+cu124 torchvision==0.20.1+cu124 --index-url https://download.pytorch.org/whl/cu124')
+    if args.use_nightly:
+        cmd = os.environ.get('TORCH_COMMAND', 'pip install --upgrade --pre torch torchvision --index-url https://download.pytorch.org/whl/nightly/cu128 --extra-index-url https://download.pytorch.org/whl/nightly/cu126')
+    else:
+        cmd = os.environ.get('TORCH_COMMAND', 'torch==2.6.0+cu126 torchvision==0.21.0+cu126 --index-url https://download.pytorch.org/whl/cu126')
+    return cmd
 
 
 def install_rocm_zluda():
+    torch_command = ''
     t_start = time.time()
     if args.skip_all or args.skip_requirements:
-        return None
+        return torch_command
     from modules import rocm
     if not rocm.is_installed:
         log.warning('ROCm: could not find ROCm toolkit installed')
         log.info('Using CPU-only torch')
         return os.environ.get('TORCH_COMMAND', 'torch torchvision')
 
-    check_python(supported_minors=[10, 11], reason='ROCm or ZLUDA backends require Python 3.10 or 3.11')
     log.info('ROCm: AMD toolkit detected')
     os.environ.setdefault('PYTORCH_HIP_ALLOC_CONF', 'garbage_collection_threshold:0.8,max_split_size_mb:512')
     # if not is_windows:
@@ -573,10 +623,9 @@ def install_rocm_zluda():
     if device is not None:
         msg += f', using agent {device.name}'
     log.info(msg)
-    torch_command = ''
 
-    if sys.platform == "win32":
-        # TODO install: enable ROCm for windows when available
+    if sys.platform == "win32": # TODO install: enable ROCm for windows when available
+        check_python(supported_minors=[10, 11], reason='ZLUDA backend requires Python 3.10 or 3.11')
 
         if args.device_id is not None:
             if os.environ.get('HIP_VISIBLE_DEVICES', None) is not None:
@@ -586,11 +635,11 @@ def install_rocm_zluda():
 
         error = None
         from modules import zluda_installer
-        zluda_installer.set_default_agent(device)
         try:
-            if args.reinstall or zluda_installer.is_old_zluda():
+            if args.reinstall or zluda_installer.is_reinstall_needed():
                 zluda_installer.uninstall()
             zluda_installer.install()
+            zluda_installer.set_default_agent(device)
         except Exception as e:
             error = e
             log.warning(f'Failed to install ZLUDA: {e}')
@@ -602,7 +651,7 @@ def install_rocm_zluda():
                     zluda_installer.set_blaslt_enabled(device.blaslt_supported)
                 zluda_installer.make_copy()
                 zluda_installer.load()
-                torch_command = os.environ.get('TORCH_COMMAND', f'torch=={zluda_installer.get_default_torch_version(device)} torchvision --index-url https://download.pytorch.org/whl/cu118')
+                torch_command = os.environ.get('TORCH_COMMAND', 'torch==2.6.0 torchvision --index-url https://download.pytorch.org/whl/cu118')
                 log.info(f'Using ZLUDA in {zluda_installer.path}')
             except Exception as e:
                 error = e
@@ -611,34 +660,34 @@ def install_rocm_zluda():
             log.info('Using CPU-only torch')
             torch_command = os.environ.get('TORCH_COMMAND', 'torch torchvision')
     else:
-        if rocm.version is None or float(rocm.version) > 6.1: # assume the latest if version check fails
-            # torch_command = os.environ.get('TORCH_COMMAND', 'torch==2.5.1+rocm6.2 torchvision==0.20.1+rocm6.2 --index-url https://download.pytorch.org/whl/rocm6.2')
-            torch_command = os.environ.get('TORCH_COMMAND', 'torch==2.4.1+rocm6.1 torchvision==0.19.1+rocm6.1 --index-url https://download.pytorch.org/whl/rocm6.1')
-        elif rocm.version == "6.1": # lock to 2.4.1, older rocm (5.7) uses torch 2.3
-            torch_command = os.environ.get('TORCH_COMMAND', 'torch==2.4.1+rocm6.1 torchvision==0.19.1+rocm6.1 --index-url https://download.pytorch.org/whl/rocm6.1')
-        elif rocm.version == "6.0": # lock to 2.4.1, older rocm (5.7) uses torch 2.3
-            torch_command = os.environ.get('TORCH_COMMAND', 'torch==2.4.1+rocm6.0 torchvision==0.19.1+rocm6.0 --index-url https://download.pytorch.org/whl/rocm6.0')
-        elif float(rocm.version) < 5.5: # oldest supported version is 5.5
-            log.warning(f"ROCm: unsupported version={rocm.version}")
-            log.warning("ROCm: minimum supported version=5.5")
-            torch_command = os.environ.get('TORCH_COMMAND', 'torch torchvision --index-url https://download.pytorch.org/whl/rocm5.5')
+        check_python(supported_minors=[9, 10, 11, 12], reason='ROCm backend requires a Python version between 3.9 and 3.12')
+
+        if os.environ.get("TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL", None) is None:
+            os.environ.setdefault('TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL', '1')
+
+        if args.use_nightly:
+            if rocm.version is None or float(rocm.version) >= 6.3: # assume the latest if version check fails
+                torch_command = os.environ.get('TORCH_COMMAND', '--upgrade --pre torch torchvision --index-url https://download.pytorch.org/whl/nightly/rocm6.3')
+            elif rocm.version == "6.2": # use rocm 6.2.4 instead of 6.2 as torch+rocm6.2 doesn't exists
+                torch_command = os.environ.get('TORCH_COMMAND', '--upgrade --pre torch torchvision --index-url https://download.pytorch.org/whl/nightly/rocm6.2.4')
+            else: # oldest rocm version on nightly is 6.1
+                torch_command = os.environ.get('TORCH_COMMAND', '--upgrade --pre torch torchvision --index-url https://download.pytorch.org/whl/nightly/rocm6.1')
         else:
-            torch_command = os.environ.get('TORCH_COMMAND', f'torch torchvision --index-url https://download.pytorch.org/whl/rocm{rocm.version}')
-
-        if sys.version_info < (3, 11):
-            ort_version = os.environ.get('ONNXRUNTIME_VERSION', None)
-            if rocm.version is None or float(rocm.version) > 6.0:
-                ort_package = os.environ.get('ONNXRUNTIME_PACKAGE', f"--pre onnxruntime-training{'' if ort_version is None else ('==' + ort_version)} --index-url https://pypi.lsh.sh/60 --extra-index-url https://pypi.org/simple")
+            if rocm.version is None or float(rocm.version) >= 6.2: # assume the latest if version check fails
+                # use rocm 6.2.4 instead of 6.2 as torch==2.6.0+rocm6.2 doesn't exists
+                torch_command = os.environ.get('TORCH_COMMAND', 'torch==2.6.0+rocm6.2.4 torchvision==0.21.0+rocm6.2.4 --index-url https://download.pytorch.org/whl/rocm6.2.4')
+            elif rocm.version == "6.1":
+                torch_command = os.environ.get('TORCH_COMMAND', 'torch==2.6.0+rocm6.1 torchvision==0.21.0+rocm6.1 --index-url https://download.pytorch.org/whl/rocm6.1')
+            elif rocm.version == "6.0":
+                # lock to 2.4.1 instead of 2.5.1 for performance reasons there are no support for torch 2.6.0 for rocm 6.0
+                torch_command = os.environ.get('TORCH_COMMAND', 'torch==2.4.1+rocm6.0 torchvision==0.19.1+rocm6.0 --index-url https://download.pytorch.org/whl/rocm6.0')
+            elif float(rocm.version) < 5.5: # oldest supported version is 5.5
+                log.warning(f"ROCm: unsupported version={rocm.version}")
+                log.warning("ROCm: minimum supported version=5.5")
+                torch_command = os.environ.get('TORCH_COMMAND', 'torch torchvision --index-url https://download.pytorch.org/whl/rocm5.5')
             else:
-                ort_package = os.environ.get('ONNXRUNTIME_PACKAGE', f"--pre onnxruntime-training{'' if ort_version is None else ('==' + ort_version)} --index-url https://pypi.lsh.sh/{rocm.version[0]}{rocm.version[2]} --extra-index-url https://pypi.org/simple")
-            install(ort_package, 'onnxruntime-training')
-
-        if installed("torch") and device is not None:
-            if 'Flash attention' in opts.get('sdp_options', ''):
-                if not installed('flash-attn'):
-                    install(rocm.get_flash_attention_command(device), reinstall=True)
-            #elif not args.experimental:
-            #    uninstall('flash-attn')
+                # older rocm (5.7) uses torch 2.3 or older
+                torch_command = os.environ.get('TORCH_COMMAND', f'torch torchvision --index-url https://download.pytorch.org/whl/rocm{rocm.version}')
 
         if device is not None and rocm.version != "6.2" and rocm.get_blaslt_enabled():
             log.debug(f'ROCm hipBLASLt: arch={device.name} available={device.blaslt_supported}')
@@ -659,39 +708,52 @@ def install_rocm_zluda():
 
 def install_ipex(torch_command):
     t_start = time.time()
-    check_python(supported_minors=[10,11], reason='IPEX backend requires Python 3.10 or 3.11')
+    check_python(supported_minors=[9, 10, 11, 12], reason='IPEX backend requires a Python version between 3.9 and 3.12')
     args.use_ipex = True # pylint: disable=attribute-defined-outside-init
     log.info('IPEX: Intel OneAPI toolkit detected')
+
     if os.environ.get("NEOReadDebugKeys", None) is None:
         os.environ.setdefault('NEOReadDebugKeys', '1')
+
     if os.environ.get("ClDeviceGlobalMemSizeAvailablePercent", None) is None:
         os.environ.setdefault('ClDeviceGlobalMemSizeAvailablePercent', '100')
+
+    if os.environ.get("SYCL_CACHE_PERSISTENT", None) is None:
+        os.environ.setdefault('SYCL_CACHE_PERSISTENT', '1') # Jit cache
+
     if os.environ.get("PYTORCH_ENABLE_XPU_FALLBACK", None) is None:
-        os.environ.setdefault('PYTORCH_ENABLE_XPU_FALLBACK', '1')
-    if "linux" in sys.platform:
-        torch_command = os.environ.get('TORCH_COMMAND', 'torch==2.5.1+cxx11.abi torchvision==0.20.1+cxx11.abi intel-extension-for-pytorch==2.5.10+xpu oneccl_bind_pt==2.5.0+xpu --extra-index-url https://pytorch-extension.intel.com/release-whl/stable/xpu/cn/')
-        # torch_command = os.environ.get('TORCH_COMMAND', 'torch torchvision --index-url https://download.pytorch.org/whl/test/xpu') # test wheels are stable previews, significantly slower than IPEX
-        # os.environ.setdefault('TENSORFLOW_PACKAGE', 'tensorflow==2.15.1 intel-extension-for-tensorflow[xpu]==2.15.0.1')
+        os.environ.setdefault('PYTORCH_ENABLE_XPU_FALLBACK', '1') # CPU fallback for unsupported ops
+
+    if os.environ.get('IPEX_FORCE_ATTENTION_SLICE', None) is None:
+        # XPU PyTorch doesn't support Flash Atten or Memory Atten yet so Battlemage goes OOM without this
+        os.environ.setdefault('IPEX_FORCE_ATTENTION_SLICE', '1')
+
+    # FP64 emulation causes random UR Errors
+    #if os.environ.get("OverrideDefaultFP64Settings", None) is None:
+    #    os.environ.setdefault('OverrideDefaultFP64Settings', '1')
+    #if os.environ.get("IGC_EnableDPEmulation", None) is None:
+    #    os.environ.setdefault('IGC_EnableDPEmulation', '1') # FP64 Emulation
+
+    if args.use_nightly:
+        torch_command = os.environ.get('TORCH_COMMAND', '--upgrade --pre torch torchvision --index-url https://download.pytorch.org/whl/nightly/xpu')
     else:
-        torch_command = os.environ.get('TORCH_COMMAND', '--pre torch torchvision --index-url https://download.pytorch.org/whl/nightly/xpu') # torchvision doesn't exist on test/stable branch for windows
-    install(os.environ.get('OPENVINO_PACKAGE', 'openvino==2024.5.0'), 'openvino', ignore=True)
-    install('nncf==2.7.0', ignore=True, no_deps=True) # requires older pandas
-    install(os.environ.get('ONNXRUNTIME_PACKAGE', 'onnxruntime-openvino'), 'onnxruntime-openvino', ignore=True)
+        torch_command = os.environ.get('TORCH_COMMAND', 'torch==2.6.0+xpu torchvision==0.21.0+xpu --index-url https://download.pytorch.org/whl/xpu')
+
     ts('ipex', t_start)
     return torch_command
 
 
 def install_openvino(torch_command):
     t_start = time.time()
-    check_python(supported_minors=[9, 10, 11, 12], reason='OpenVINO backend requires Python 3.9, 3.10 or 3.11')
+    check_python(supported_minors=[9, 10, 11, 12], reason='OpenVINO backend requires a Python version between 3.9 and 3.12')
     log.info('OpenVINO: selected')
     if sys.platform == 'darwin':
-        torch_command = os.environ.get('TORCH_COMMAND', 'torch==2.3.1 torchvision==0.18.1')
+        torch_command = os.environ.get('TORCH_COMMAND', 'torch==2.6.0 torchvision==0.21.0')
     else:
-        torch_command = os.environ.get('TORCH_COMMAND', 'torch==2.3.1+cpu torchvision==0.18.1+cpu --index-url https://download.pytorch.org/whl/cpu')
-    install(os.environ.get('OPENVINO_PACKAGE', 'openvino==2024.6.0'), 'openvino')
-    install(os.environ.get('ONNXRUNTIME_PACKAGE', 'onnxruntime-openvino'), 'onnxruntime-openvino', ignore=True)
-    install('nncf==2.14.1', 'nncf')
+        torch_command = os.environ.get('TORCH_COMMAND', 'torch==2.6.0+cpu torchvision==0.21.0+cpu --index-url https://download.pytorch.org/whl/cpu')
+
+    install(os.environ.get('OPENVINO_COMMAND', 'openvino==2025.0.0'), 'openvino')
+    install(os.environ.get('NNCF_COMMAND', 'nncf==2.15.0'), 'nncf')
     os.environ.setdefault('PYTORCH_TRACING_MODE', 'TORCHFX')
     if os.environ.get("NEOReadDebugKeys", None) is None:
         os.environ.setdefault('NEOReadDebugKeys', '1')
@@ -703,8 +765,10 @@ def install_openvino(torch_command):
 
 def install_torch_addons():
     t_start = time.time()
+    triton_command = os.environ.get('TRITON_COMMAND', None)
+    if triton_command is not None and triton_command != 'skip':
+        install(triton_command, 'triton', quiet=True)
     xformers_package = os.environ.get('XFORMERS_PACKAGE', '--pre xformers') if opts.get('cross_attention_optimization', '') == 'xFormers' or args.use_xformers else 'none'
-    triton_command = os.environ.get('TRITON_COMMAND', 'triton') if sys.platform == 'linux' else None
     if 'xformers' in xformers_package:
         try:
             install(xformers_package, ignore=True, no_deps=True)
@@ -726,9 +790,22 @@ def install_torch_addons():
         install('optimum-quanto==0.2.6', 'optimum-quanto')
     if not args.experimental:
         uninstall('wandb', quiet=True)
-    if triton_command is not None:
-        install(triton_command, 'triton', quiet=True)
     ts('addons', t_start)
+
+
+# check cudnn
+def check_cudnn():
+    import site
+    site_packages = site.getsitepackages()
+    cuda_path = os.environ.get('CUDA_PATH', '')
+    if cuda_path == '':
+        for site_package in site_packages:
+            folder = os.path.join(site_package, 'nvidia', 'cudnn', 'lib')
+            if os.path.exists(folder) and folder not in cuda_path:
+                cuda_path = f"{cuda_path}:{folder}"
+                if cuda_path.startswith(':'):
+                    cuda_path = cuda_path[1:]
+                os.environ['CUDA_PATH'] = cuda_path
 
 
 # check torch version
@@ -765,14 +842,12 @@ def check_torch():
             torch_command = install_ipex(torch_command)
         elif allow_openvino and args.use_openvino: # prioritize openvino
             torch_command = install_openvino(torch_command)
-
         elif is_cuda_available:
             torch_command = install_cuda()
         elif is_rocm_available:
             torch_command = install_rocm_zluda()
         elif is_ipex_available:
             torch_command = install_ipex(torch_command)
-
         else:
             machine = platform.machine()
             if sys.platform == 'darwin':
@@ -842,6 +917,7 @@ def check_torch():
         return
     if not args.skip_all:
         install_torch_addons()
+    check_cudnn()
     if args.profile:
         pr.disable()
         print_profile(pr, 'Torch')
@@ -914,14 +990,13 @@ def run_extension_installer(folder):
 
 # get list of all enabled extensions
 def list_extensions_folder(folder, quiet=False):
-    name = os.path.basename(folder)
     disabled_extensions_all = opts.get('disable_all_extensions', 'none')
     if disabled_extensions_all != 'none':
         return []
     disabled_extensions = opts.get('disabled_extensions', [])
     enabled_extensions = [x for x in os.listdir(folder) if os.path.isdir(os.path.join(folder, x)) and x not in disabled_extensions and not x.startswith('.')]
     if not quiet:
-        log.info(f'Extensions: enabled={enabled_extensions} {name}')
+        log.info(f'Extensions: path="{folder}" enabled={enabled_extensions}')
     return enabled_extensions
 
 
@@ -1014,6 +1089,14 @@ def install_submodules(force=True):
     return '\n'.join(res)
 
 
+def reload(package):
+    modules = [m for m in sys.modules if m.startswith(package)]
+    for m in modules:
+        del sys.modules[m]
+    sys.modules[package] = importlib.import_module(package)
+    log.debug(f'Reload: package={package} version={sys.modules[package].__version__ if hasattr(sys.modules[package], "__version__") else "N/A"}')
+
+
 def ensure_base_requirements():
     t_start = time.time()
     setuptools_version = '69.5.1'
@@ -1057,11 +1140,14 @@ def install_optional():
     install('clean-fid')
     install('pillow-jxl-plugin==1.3.1', ignore=True)
     install('optimum-quanto==0.2.6', ignore=True)
-    install('bitsandbytes==0.45.0', ignore=True)
+    install('bitsandbytes==0.45.1', ignore=True)
     install('pynvml', ignore=True)
     install('ultralytics==8.3.40', ignore=True)
     install('Cython', ignore=True)
-    install('insightface', ignore=True) # problematic build
+    install('insightface==0.7.3', ignore=True) # problematic build
+    install('albumentations==1.4.3', ignore=True)
+    install('pydantic==1.10.21', ignore=True)
+    reload('pydantic')
     install('nncf==2.7.0', ignore=True, no_deps=True) # requires older pandas
     # install('flash-attn', ignore=True) # requires cuda and nvcc to be installed
     install('gguf', ignore=True)
@@ -1248,7 +1334,7 @@ def check_venv():
     t_start = time.time()
     import site
     pkg_path = [try_relpath(p) for p in site.getsitepackages() if os.path.exists(p)]
-    log.debug(f'Packages: venv={try_relpath(sys.prefix)} site={pkg_path}')
+    log.debug(f'Packages: prefix={try_relpath(sys.prefix)} site={pkg_path}')
     for p in pkg_path:
         invalid = []
         for f in os.listdir(p):
@@ -1292,7 +1378,7 @@ def check_version(offline=False, reset=True): # pylint: disable=unused-argument
         return
     commits = None
     try:
-        commits = requests.get('https://api.github.com/repos/vladmandic/automatic/branches/master', timeout=10).json()
+        commits = requests.get('https://api.github.com/repos/vladmandic/sdnext/branches/master', timeout=10).json()
         if commits['commit']['sha'] != commit:
             if args.upgrade:
                 global quick_allowed # pylint: disable=global-statement
@@ -1389,6 +1475,7 @@ def add_args(parser):
     group_compute.add_argument("--use-openvino", default=os.environ.get("SD_USEOPENVINO",False), action='store_true', help="Use Intel OpenVINO backend, default: %(default)s")
     group_compute.add_argument("--use-ipex", default=os.environ.get("SD_USEIPEX",False), action='store_true', help="Force use Intel OneAPI XPU backend, default: %(default)s")
     group_compute.add_argument("--use-cuda", default=os.environ.get("SD_USECUDA",False), action='store_true', help="Force use nVidia CUDA backend, default: %(default)s")
+    group_compute.add_argument("--use-nightly", default=os.environ.get("SD_USENIGHTLY",False), action='store_true', help="Force use nightly torch builds, default: %(default)s")
     group_compute.add_argument("--use-rocm", default=os.environ.get("SD_USEROCM",False), action='store_true', help="Force use AMD ROCm backend, default: %(default)s")
     group_compute.add_argument('--use-zluda', default=os.environ.get("SD_USEZLUDA", False), action='store_true', help="Force use ZLUDA, AMD GPUs only, default: %(default)s")
     group_compute.add_argument("--use-xformers", default=os.environ.get("SD_USEXFORMERS",False), action='store_true', help="Force use xFormers cross-optimization, default: %(default)s")

@@ -9,8 +9,8 @@ import logging
 import importlib
 import contextlib
 from threading import Thread
-import modules.hashes
 import modules.loader
+import modules.hashes
 
 from installer import log, git_commit, custom_excepthook
 from modules import timer, paths, shared, extensions, gr_tempdir, modelloader
@@ -29,6 +29,7 @@ import modules.ui
 import modules.txt2img
 import modules.img2img
 import modules.upscaler
+import modules.upscaler_simple
 import modules.extra_networks
 import modules.ui_extra_networks
 import modules.textual_inversion.textual_inversion
@@ -208,12 +209,33 @@ def async_policy():
     asyncio.set_event_loop_policy(AnyThreadEventLoopPolicy())
 
 
+def get_external_ip():
+    import socket
+    try:
+        ip_address = socket.gethostbyname(socket.gethostname())
+        if ip_address.startswith('127.'):
+            return None
+        return ip_address
+    except Exception:
+        return None
+
+
+def get_remote_ip():
+    import requests
+    try:
+        response = requests.get('https://api.ipify.org?format=json', timeout=2)
+        ip_address = response.json()['ip']
+        return ip_address
+    except Exception:
+        return None
+
+
 def start_common():
     log.debug('Entering start sequence')
     if shared.cmd_opts.data_dir is not None and len(shared.cmd_opts.data_dir) > 0:
-        log.info(f'Using data path: {shared.cmd_opts.data_dir}')
+        log.info(f'Base path: data="{shared.cmd_opts.data_dir}"')
     if shared.cmd_opts.models_dir is not None and len(shared.cmd_opts.models_dir) > 0 and shared.cmd_opts.models_dir != 'models':
-        log.info(f'Models path: {shared.cmd_opts.models_dir}')
+        log.info(f'Base path: models="{shared.cmd_opts.models_dir}"')
     paths.create_paths(shared.opts)
     async_policy()
     initialize()
@@ -226,6 +248,18 @@ def start_common():
     if shared.opts.clean_temp_dir_at_start:
         gr_tempdir.cleanup_tmpdr()
         timer.startup.record("cleanup")
+
+
+def mount_subpath(app):
+    if shared.cmd_opts.subpath:
+        shared.opts.subpath = shared.cmd_opts.subpath
+    if shared.opts.subpath is None or len(shared.opts.subpath) == 0:
+        return
+    import gradio
+    if not shared.opts.subpath.startswith('/'):
+        shared.opts.subpath = f'/{shared.opts.subpath}'
+    gradio.mount_gradio_app(app, shared.demo, path=shared.opts.subpath)
+    shared.log.info(f'Mounted: subpath="{shared.opts.subpath}"')
 
 
 def start_ui():
@@ -283,6 +317,18 @@ def start_ui():
     if shared.cmd_opts.data_dir is not None:
         gr_tempdir.register_tmp_file(shared.demo, os.path.join(shared.cmd_opts.data_dir, 'x'))
     shared.log.info(f'Local URL: {local_url}')
+    if shared.cmd_opts.listen:
+        if not gradio_auth_creds:
+            shared.log.warning('Public URL: enabled without authentication')
+        if shared.cmd_opts.insecure:
+            shared.log.warning('Public URL: enabled with insecure flag')
+        proto = 'https' if shared.cmd_opts.tls_keyfile is not None else 'http'
+        external_ip = get_external_ip()
+        if external_ip is not None:
+            shared.log.info(f'External URL: {proto}://{external_ip}:{shared.cmd_opts.port}')
+        public_ip = get_remote_ip()
+        if public_ip is not None:
+            shared.log.info(f'Public URL: {proto}://{public_ip}:{shared.cmd_opts.port}')
     if shared.cmd_opts.docs:
         shared.log.info(f'API Docs: {local_url[:-1]}/docs') # pylint: disable=unsubscriptable-object
         shared.log.info(f'API ReDocs: {local_url[:-1]}/redocs') # pylint: disable=unsubscriptable-object
@@ -292,18 +338,13 @@ def start_ui():
     shared.demo.server.wants_restart = False
     modules.api.middleware.setup_middleware(app, shared.cmd_opts)
 
-    if shared.cmd_opts.subpath:
-        import gradio
-        gradio.mount_gradio_app(app, shared.demo, path=f"/{shared.cmd_opts.subpath}")
-        shared.log.info(f'Redirector mounted: /{shared.cmd_opts.subpath}')
-
     timer.startup.record("launch")
 
-    modules.progress.setup_progress_api(app)
     shared.api = create_api(app)
+    shared.api.register()
+    modules.progress.setup_progress_api()
+    modules.ui_extra_networks.init_api()
     timer.startup.record("api")
-
-    modules.ui_extra_networks.init_api(app)
 
     modules.script_callbacks.app_started_callback(shared.demo, app)
     timer.startup.record("app-started")
@@ -315,6 +356,7 @@ def start_ui():
     time_component = [f'{k}:{round(v,3)}' for (k,v) in modules.scripts.time_component.items() if v > 0.005]
     if len(time_component) > 0:
         shared.log.debug(f'Scripts components: {time_component}')
+    return app
 
 
 def webui(restart=False):
@@ -323,10 +365,11 @@ def webui(restart=False):
         modules.script_callbacks.script_unloaded_callback()
 
     start_common()
-    start_ui()
+    app = start_ui()
     modules.script_callbacks.after_ui_callback()
     modules.sd_models.write_metadata()
     load_model()
+    mount_subpath(app)
     shared.opts.save(shared.config_filename)
     if shared.cmd_opts.profile:
         for k, v in modules.script_callbacks.callback_map.items():
@@ -375,6 +418,7 @@ def api_only():
     app = FastAPI(**fastapi_args)
     modules.api.middleware.setup_middleware(app, shared.cmd_opts)
     shared.api = create_api(app)
+    shared.api.register()
     shared.api.wants_restart = False
     modules.script_callbacks.app_started_callback(None, app)
     modules.sd_models.write_metadata()
