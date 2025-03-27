@@ -1149,8 +1149,6 @@ def install_optional():
     install('Cython', ignore=True)
     install('insightface==0.7.3', ignore=True) # problematic build
     install('albumentations==1.4.3', ignore=True)
-    install('pydantic==1.10.21', ignore=True)
-    reload('pydantic')
     install('nncf==2.7.0', ignore=True, no_deps=True) # requires older pandas
     # install('flash-attn', ignore=True) # requires cuda and nvcc to be installed
     install('gguf', ignore=True)
