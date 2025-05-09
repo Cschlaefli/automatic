@@ -109,6 +109,9 @@ class Extension:
         self.ctime = 0
 
     def read_info(self, force=False):
+        ''' Read extension info from git repository
+        :param force: Force to refetch info from git repository
+        '''
         if self.have_info_from_repo and not force:
             return
         self.have_info_from_repo = True
