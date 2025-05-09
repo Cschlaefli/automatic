@@ -27,3 +27,4 @@
 /Containerfile
 /run.sh
 /build.sh
+.venv
