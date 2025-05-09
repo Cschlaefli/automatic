@@ -17,7 +17,7 @@ class State:
     state_history = []
     image_history = 0
     latent_history = 0
-    id = 0
+    id = '0'
     results = []
     skipped = False
     interrupted = False
@@ -154,7 +154,7 @@ class State:
         else:
             self.results.append(results)
 
-    def get_id(self, task_id:str=None):
+    def get_id(self, task_id:str=None) -> str:
         if task_id is None or task_id == 0:
             task_id = uuid.uuid4().hex[:15]
         if not isinstance(task_id, str):
