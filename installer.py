@@ -88,8 +88,7 @@ def container_install(api_only=True):
     install("uv", "uv")
     # install all dependencies
     install_api_deps()
-    if not api_only:
-        install_gradio()
+    install_gradio()
     install_optional()
     check_torch()
     check_onnx()
