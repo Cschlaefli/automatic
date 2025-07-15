@@ -260,7 +260,9 @@ def main():
         installer.set_environment()
     if args.uv:
         installer.install("uv", "uv")
-    installer.install_gradio()
+    installer.install_api_deps() # before gradio
+    if not args.api_only:
+        installer.install_gradio()
     installer.check_torch()
     installer.check_onnx()
     installer.check_transformers()

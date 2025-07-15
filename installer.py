@@ -76,6 +76,35 @@ except Exception:
     elapsed = lambda *args, **kwargs: None # pylint: disable=unnecessary-lambda-assignment
 
 
+def container_install(api_only=True):
+    args.use_cuda = True
+    args.logs_stdout = True
+    ensure_base_requirements()
+    setup_logging()
+    check_python()
+    # check_version()
+    check_venv()
+    # setup uv
+    install("uv", "uv")
+    # install all dependencies
+    install_api_deps()
+    if not api_only:
+        install_gradio()
+    install_optional()
+    check_torch()
+    check_onnx()
+    check_transformers()
+    check_diffusers()
+    check_modified_files()
+
+    install_requirements()
+    install_packages()
+    # skipping these because api only
+    if not api_only:
+        install_submodules()
+        update_wiki()
+
+
 def get_console():
     return console
 
@@ -857,7 +886,7 @@ def check_torch():
     allow_ipex = not (args.use_cuda or args.use_rocm or args.use_directml or args.use_openvino)
     allow_directml = not (args.use_cuda or args.use_rocm or args.use_ipex or args.use_openvino)
     allow_openvino = not (args.use_cuda or args.use_rocm or args.use_ipex or args.use_directml)
-    log.debug(f'Torch overrides: cuda={args.use_cuda} rocm={args.use_rocm} ipex={args.use_ipex} directml={args.use_directml} openvino={args.use_openvino} zluda={args.use_zluda}')
+    log.warning(f'Torch overrides: cuda={args.use_cuda} rocm={args.use_rocm} ipex={args.use_ipex} directml={args.use_directml} openvino={args.use_openvino} zluda={args.use_zluda}')
     # log.debug(f'Torch allowed: cuda={allow_cuda} rocm={allow_rocm} ipex={allow_ipex} diml={allow_directml} openvino={allow_openvino}')
     torch_command = os.environ.get('TORCH_COMMAND', '')
 
@@ -868,6 +897,7 @@ def check_torch():
         is_rocm_available = allow_rocm and rocm.is_installed
         is_ipex_available = allow_ipex and (args.use_ipex or shutil.which('sycl-ls') is not None or shutil.which('sycl-ls.exe') is not None or os.environ.get('ONEAPI_ROOT') is not None or os.path.exists('/opt/intel/oneapi') or os.path.exists("C:/Program Files (x86)/Intel/oneAPI") or os.path.exists("C:/oneAPI"))
 
+        log.info(f'Torch: CUDA available={is_cuda_available} ROCm available={is_rocm_available} IPEX available={is_ipex_available} DirectML available={allow_directml} OpenVINO available={allow_openvino}')
         if is_cuda_available and args.use_cuda: # prioritize cuda
             torch_command = install_cuda()
         elif is_rocm_available and (args.use_rocm or args.use_zluda): # prioritize rocm
@@ -1191,12 +1221,18 @@ def install_gradio():
     # aiofiles-23.2.1 altair-5.5.0 annotated-types-0.7.0 anyio-4.9.0 attrs-25.3.0 certifi-2025.6.15 charset_normalizer-3.4.2 click-8.2.1 contourpy-1.3.2 cycler-0.12.1 fastapi-0.115.14 ffmpy-0.6.0 filelock-3.18.0 fonttools-4.58.4 fsspec-2025.5.1 gradio-3.43.2 gradio-client-0.5.0 h11-0.16.0 hf-xet-1.1.5 httpcore-1.0.9 httpx-0.28.1 huggingface-hub-0.33.1 idna-3.10 importlib-resources-6.5.2 jinja2-3.1.6 jsonschema-4.24.0 jsonschema-specifications-2025.4.1 kiwisolver-1.4.8 markupsafe-2.1.5 matplotlib-3.10.3 narwhals-1.45.0 numpy-1.26.4 orjson-3.10.18 packaging-25.0 pandas-2.3.0 pillow-10.4.0 pydantic-2.11.7 pydantic-core-2.33.2 pydub-0.25.1 pyparsing-3.2.3 python-dateutil-2.9.0.post0 python-multipart-0.0.20 pytz-2025.2 pyyaml-6.0.2 referencing-0.36.2 requests-2.32.4 rpds-py-0.25.1 semantic-version-2.10.0 six-1.17.0 sniffio-1.3.1 starlette-0.46.2 tqdm-4.67.1 typing-extensions-4.14.0 typing-inspection-0.4.1 tzdata-2025.2 urllib3-2.5.0 uvicorn-0.35.0 websockets-11.0.3
     install('gradio==3.43.2', no_deps=True)
     install('gradio-client==0.5.0', no_deps=True, quiet=True)
-    install('dctorch==0.1.2', no_deps=True, quiet=True)
-    pkgs = ['fastapi', 'websockets', 'aiofiles', 'ffmpy', 'pydub', 'uvicorn', 'semantic-version', 'altair', 'python-multipart', 'matplotlib']
+    pkgs = ['aiofiles', 'ffmpy', 'pydub', 'uvicorn', 'semantic-version', 'altair', 'python-multipart', 'matplotlib']
     for pkg in pkgs:
         if not installed(pkg, quiet=True):
             install(pkg, quiet=True)
 
+def install_api_deps():
+    # seperate out non-gradio API dependencies
+    install('dctorch==0.1.2', no_deps=True, quiet=True)
+    pkgs = ['fastapi', 'websockets', 'semantic-version', 'matplotlib']
+    for pkg in pkgs:
+        if not installed(pkg, quiet=True):
+            install(pkg, quiet=True)
 
 def install_optional():
     t_start = time.time()
@@ -1653,3 +1689,6 @@ def read_options():
             except Exception as e:
                 log.error(f'Error reading options file: {file} {e}')
     ts('options', t_start)
+
+if __name__ == "__main__":
+    container_install()
