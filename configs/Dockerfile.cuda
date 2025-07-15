@@ -18,8 +18,8 @@ LABEL org.opencontainers.image.version="latest"
 
 # minimum install
 RUN apt-get -y update && \
-    apt-get -y --no-install-recommends install git build-essential google-perftools curl ffmpeg && \
-    /usr/sbin/ldconfig
+  apt-get -y --no-install-recommends install git build-essential google-perftools curl ffmpeg && \
+  /usr/sbin/ldconfig
 
 # optional if full cuda-dev is required by some downstream library
 # RUN ["apt-get", "-y", "nvidia-cuda-toolkit"]
@@ -46,6 +46,8 @@ ENV SD_DOCKER=true
 # tcmalloc is not required but it is highly recommended
 ENV LD_PRELOAD=libtcmalloc.so.4
 
+WORKDIR /app
+
 #WIP for local build caching, mounting /opt/conda to local fs for now though
 COPY installer.py .
 COPY requirements.txt .
@@ -64,7 +66,6 @@ RUN python installer.py
 
 # copy sdnext
 COPY . /app
-WORKDIR /app
 # sdnext will run all necessary pip install ops and then exit
 # RUN ["python", "/app/launch.py", "--debug", "--uv", "--api-only", "--use-cuda", "--log-stdout", "--test", "--optional"]
 # preinstall additional packages to avoid installation during runtime
