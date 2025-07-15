@@ -28,3 +28,5 @@
 /run.sh
 /build.sh
 .venv
+/tmp
+

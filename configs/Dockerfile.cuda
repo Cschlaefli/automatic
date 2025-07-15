@@ -26,7 +26,7 @@ RUN apt-get -y update && \
 
 
 
-ARG NO_CACHE=false
+ARG NO_CACHE=true
 
 # fix rich logs in container
 ENV COLUMNS=200 
