@@ -18,12 +18,11 @@ LABEL org.opencontainers.image.version="latest"
 
 # minimum install
 RUN apt-get -y update && \
-    apt-get -y install git build-essential google-perftools curl ffmpeg && \
-    rm -rf /var/lib/apt/lists/*
+    apt-get -y --no-install-recommends install git build-essential google-perftools curl ffmpeg && \
+    /usr/sbin/ldconfig
 
 # optional if full cuda-dev is required by some downstream library
 # RUN ["apt-get", "-y", "nvidia-cuda-toolkit"]
-RUN ["/usr/sbin/ldconfig"]
 
 # copy sdnext
 COPY . /app
