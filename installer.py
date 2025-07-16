@@ -80,9 +80,9 @@ def container_install(api_only=True):
     args.use_cuda = True
     args.logs_stdout = True
     ensure_base_requirements()
-    setup_logging()
+    # setup_logging() # why would we care
     check_python()
-    # check_version()
+    # check_version() # who cares
     check_venv()
     # setup uv
     install("uv", "uv")
