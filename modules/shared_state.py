@@ -6,9 +6,13 @@ import time
 import datetime
 from modules.errors import log, display
 
+from opentelemetry import trace
+
 
 debug_output = os.environ.get('SD_STATE_DEBUG', None)
 debug_history = debug_output or os.environ.get('SD_STATE_HISTORY', None)
+
+tracer = trace.get_tracer("modules.shared_state")
 
 
 class State:
@@ -141,6 +145,17 @@ class State:
 
     def history(self, op:str):
         job = { 'id': self.id, 'job': self.job.lower(), 'op': op.lower(), 'start': self.time_start, 'end': self.time_end, 'outputs': self.results }
+        current_span = trace.get_current_span()
+        try:
+            current_span.add_event("job.history", {
+                "job.id": self.id,
+                "job": self.job.lower(),
+                "operation": op.lower()
+            })
+        except Exception as e:
+            if current_span:
+                log.error(f"Failed to add job history event to span: {e}")
+            log.debug(f"Untraced job history event: {job}")
         self.state_history.append(job)
         l = len(self.state_history)
         if l > 10000:
@@ -163,6 +178,10 @@ class State:
         return match.group(1) if match else task_id
 
     def begin(self, title="", task_id=0, api=None):
+        current_span = trace.get_current_span()
+        current_span.set_attribute("job", title)
+        current_span.set_attribute("job.id", task_id)
+        current_span.set_attribute("api.job", api is not None)
         import modules.devices
         self.job_history.append(title)
         self.total_jobs += 1
@@ -199,6 +218,10 @@ class State:
         modules.devices.torch_gc()
 
     def end(self, api=None):
+        current_span = trace.get_current_span()
+        current_span.set_attribute("job", self.job)
+        current_span.set_attribute("job.id", self.id)
+        current_span.set_attribute("api.job", api is not None)
         import modules.devices
         if self.time_start is None: # someone called end before being
             # fn = f'{sys._getframe(2).f_code.co_name}:{sys._getframe(1).f_code.co_name}' # pylint: disable=protected-access
