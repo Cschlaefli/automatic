@@ -7,7 +7,9 @@ import shlex
 import subprocess
 from functools import lru_cache
 import installer
+from otel.instrument import add_tracer
 
+add_tracer() # initalize OpenTelemetry tracing and logging instrumentation as early as possible
 
 debug_install = installer.log.debug if os.environ.get('SD_INSTALL_DEBUG', None) is not None else lambda *args, **kwargs: None
 commandline_args = os.environ.get('COMMANDLINE_ARGS', "")

@@ -5,6 +5,7 @@ from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
     DEFAULT_ENDPOINT
 )
 
+from opentelemetry.instrumentation.logging import LoggingInstrumentor
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.sdk.environment_variables import (
     OTEL_EXPORTER_OTLP_ENDPOINT
@@ -20,7 +21,7 @@ from fastapi import FastAPI
 
 logger = logging.getLogger(__name__)
 
-def add_tracer() -> TracerProvider:
+def setup_basics():
     resource = Resource(attributes={
         SERVICE_NAME: "sdnext"
     })
@@ -30,12 +31,14 @@ def add_tracer() -> TracerProvider:
         BatchSpanProcessor(OTLPSpanExporter())
     )
     set_tracer_provider(tracerProvider)
-    logger.info("OpenTelemetry tracer provider registered")
+    logger.info("OpenTelemetry tracer provider setup")
     logger.info("otel exporter endpoint: %s", environ.get(OTEL_EXPORTER_OTLP_ENDPOINT, DEFAULT_ENDPOINT))
-    return tracerProvider
+
+    LoggingInstrumentor().instrument(set_logging_format=True)
+    logger.info("OpenTelemetry logging instrumentor setup")
+
 
 def instrument_api(app: FastAPI):
-
     FastAPIInstrumentor.instrument_app(app,
                                        tracer_provider=get_tracer_provider(),
                                        excluded_urls="sdapi/v1/status,health/.*")

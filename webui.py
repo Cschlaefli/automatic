@@ -414,7 +414,9 @@ def webui(restart=False):
 def api_only():
     start_common()
     from fastapi import FastAPI
+    from otel.instrument import instrument_api
     app = FastAPI(**fastapi_args)
+    instrument_api(app)
     modules.api.middleware.setup_middleware(app, shared.cmd_opts)
     shared.api = create_api(app)
     shared.api.register()
