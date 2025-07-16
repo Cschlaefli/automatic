@@ -9,6 +9,7 @@ import logging
 import importlib
 import contextlib
 from threading import Thread
+from opentelemetry import trace
 import modules.loader
 import modules.hashes
 
@@ -36,6 +37,8 @@ import modules.textual_inversion
 import modules.script_callbacks
 import modules.api.middleware
 
+tracer = trace.get_tracer(__name__)
+
 
 if not modules.loader.initialized:
     timer.startup.record("libraries")
@@ -60,7 +63,7 @@ fastapi_args = {
     # "redoc_url": "/redocs" if cmd_opts.docs else None,
 }
 
-
+@tracer.start_as_current_span("initialize")
 def initialize():
     log.debug('Initializing')
 
@@ -145,7 +148,7 @@ def initialize():
 
     signal.signal(signal.SIGINT, sigint_handler)
 
-
+@tracer.start_as_current_span("load_model")
 def load_model():
     modeldata.model_data.locked = False
     if not shared.opts.sd_checkpoint_autoload and shared.cmd_opts.ckpt is None:
@@ -221,7 +224,7 @@ def get_remote_ip():
     except Exception:
         return None
 
-
+@tracer.start_as_current_span("start_common")
 def start_common():
     log.debug('Entering start sequence')
     if shared.cmd_opts.data_dir is not None and len(shared.cmd_opts.data_dir) > 0:
@@ -411,6 +414,7 @@ def webui(restart=False):
     return shared.demo.server
 
 
+@tracer.start_as_current_span("api_only")
 def api_only():
     start_common()
     from fastapi import FastAPI
