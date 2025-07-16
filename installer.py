@@ -102,6 +102,9 @@ def container_install(api_only=True):
     if not api_only:
         install_submodules()
         update_wiki()
+    if api_only:
+        # install otel requirements
+        pip('install -r otel/requirements.txt')
 
 
 def get_console():
