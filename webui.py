@@ -171,7 +171,7 @@ def load_model():
     shared.opts.onchange("temp_dir", gr_tempdir.on_tmpdir_changed)
     timer.startup.record("onchange")
 
-
+@tracer.start_as_current_span("create_api")
 def create_api(app):
     log.debug('API initialize')
     from modules.api.api import Api
@@ -231,9 +231,13 @@ def start_common():
         log.info(f'Base path: data="{shared.cmd_opts.data_dir}"')
     if shared.cmd_opts.models_dir is not None and len(shared.cmd_opts.models_dir) > 0 and shared.cmd_opts.models_dir != 'models':
         log.info(f'Base path: models="{shared.cmd_opts.models_dir}"')
+    current_span = trace.get_current_span()
     paths.create_paths(shared.opts)
+    current_span.add_event("created paths")
     async_policy()
+    current_span.add_event("async policy set")
     initialize()
+    current_span.add_event("initialization complete")
     if shared.cmd_opts.backend == 'original':
         shared.log.error('Legacy option: backend=original is no longer supported')
         shared.cmd_opts.backend = 'diffusers'
