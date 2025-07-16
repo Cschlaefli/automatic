@@ -21,7 +21,7 @@ from fastapi import FastAPI
 
 logger = logging.getLogger(__name__)
 
-def setup_basics():
+def otel_setup():
     resource = Resource(attributes={
         SERVICE_NAME: "sdnext"
     })
