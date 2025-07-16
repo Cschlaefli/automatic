@@ -217,7 +217,7 @@ def setup_logging():
         rh.formatter = logging.Formatter('[%(module)s][%(pathname)s:%(lineno)d]  %(message)s')
     rh.addFilter(log_filter)
     rh.setLevel(level)
-    log.addHandler(rh)
+    # log.addHandler(rh)
 
     if not args.log_stdout:
         fh = RotatingFileHandler(log_file, maxBytes=32*1024*1024, backupCount=9, encoding='utf-8', delay=True) # 10MB default for log rotation
@@ -237,7 +237,7 @@ def setup_logging():
     rb.addFilter(log_filter)
     rb.setLevel(level)
     log.addHandler(rb)
-    log.buffer = rb.buffer
+    # log.buffer = rb.buffer
 
     def quiet_log(quiet: bool=False, *args, **kwargs): # pylint: disable=redefined-outer-name,keyword-arg-before-vararg
         if not quiet:
