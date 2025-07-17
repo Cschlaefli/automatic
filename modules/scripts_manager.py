@@ -5,9 +5,13 @@ import time
 from collections import namedtuple
 from dataclasses import dataclass
 import gradio as gr
+
+from opentelemetry import trace
+
 from modules import paths, script_callbacks, extensions, script_loading, scripts_postprocessing, errors, timer
 from installer import control_extensions
 
+tracer = trace.get_tracer(__name__)
 
 AlwaysVisible = object()
 time_component = {}
@@ -368,6 +372,7 @@ class ScriptRunner:
         except Exception as e:
             errors.log.error(f'Script initialize: {path} {e}')
 
+    @tracer.start_as_current_span("initialize_scripts")
     def initialize_scripts(self, is_img2img=False, is_control=False):
         from modules import scripts_auto_postprocessing
 
@@ -556,6 +561,7 @@ class ScriptRunner:
         s.report()
         return processed
 
+    @tracer.start_as_current_span("before_process")
     def before_process(self, p, **kwargs):
         s = ScriptSummary('before-process')
         for script in self.alwayson_scripts:

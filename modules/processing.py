@@ -11,7 +11,7 @@ from modules.processing_info import create_infotext
 from modules.modeldata import model_data
 from modules import pag, cfgzero
 
-tracer = trace.get_tracer("modules.processing")
+tracer = trace.get_tracer(__name__)
 
 opt_C = 4
 opt_f = 8
@@ -204,7 +204,7 @@ def process_images(p: StableDiffusionProcessing) -> Processed:
                 processed = process_images_inner(p)
                 errors.profile_torch(shared.profiler, 'Process')
         else:
-            with context_hypertile_vae(p), context_hypertile_unet(p):
+            with context_hypertile_vae(p), context_hypertile_unet(p), tracer.start_as_current_span("process_images_inner"):
                 processed = process_images_inner(p)
 
     finally:
@@ -227,7 +227,7 @@ def process_images(p: StableDiffusionProcessing) -> Processed:
         timer.process.record('post')
     return processed
 
-
+@tracer.start_as_current_span("process_init")
 def process_init(p: StableDiffusionProcessing):
     seed = get_fixed_seed(p.seed)
     subseed = get_fixed_seed(p.subseed)
