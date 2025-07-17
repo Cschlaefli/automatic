@@ -130,7 +130,7 @@ class CheckpointResponse(BaseModel):
     filename: str | None = None
     hash: str | None = None
 
-def get_checkpoint():
+def get_checkpoint() -> CheckpointResponse:
     if not shared.sd_loaded or shared.sd_model is None:
         return CheckpointResponse()
     checkpoint = getattr(shared.sd_model,"sd_model_checkpoint", None)
