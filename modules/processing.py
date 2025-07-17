@@ -4,6 +4,7 @@ import time
 import numpy as np
 from PIL import Image, ImageOps
 from opentelemetry import trace
+from opentelemetry.trace import Status, StatusCode
 from modules import shared, devices, errors, images, scripts_manager, memstats, script_callbacks, extra_networks, detailer, sd_models, sd_checkpoint, sd_vae, processing_helpers, timer, face_restoration, token_merge
 from modules.sd_hijack_hypertile import context_hypertile_vae, context_hypertile_unet
 from modules.processing_class import StableDiffusionProcessing, StableDiffusionProcessingTxt2Img, StableDiffusionProcessingImg2Img, StableDiffusionProcessingControl, StableDiffusionProcessingVideo # pylint: disable=unused-import
@@ -118,13 +119,18 @@ class Processed:
 
 @tracer.start_as_current_span("process_images")
 def process_images(p: StableDiffusionProcessing) -> Processed:
+    span = trace.get_current_span()
     timer.process.reset()
     debug(f'Process images: {vars(p)}')
     if not hasattr(p.sd_model, 'sd_checkpoint_info'):
+        span.add_event('Process images: no sd_checkpoint_info')
+        span.set_status(Status(StatusCode.ERROR))
         return None
     if p.scripts is not None and isinstance(p.scripts, scripts_manager.ScriptRunner):
+        span.add_event('Before process scripts')
         p.scripts.before_process(p)
     stored_opts = {}
+    span.add_event('Process override settings')
     for k, v in p.override_settings.copy().items():
         if shared.opts.data.get(k, None) is None and shared.opts.data_labels.get(k, None) is None:
             continue
@@ -162,17 +168,19 @@ def process_images(p: StableDiffusionProcessing) -> Processed:
         shared.prompt_styles.apply_styles_to_extra(p)
         shared.prompt_styles.extract_comments(p)
         if 'Model' not in shared.opts.cuda_compile:
-            token_merge.apply_token_merging(p.sd_model)
-            from modules import sd_hijack_freeu, para_attention, teacache
-            sd_hijack_freeu.apply_freeu(p)
-            para_attention.apply_first_block_cache()
-            teacache.apply_teacache(p)
+            with tracer.start_as_current_span("process_images_inner") :
+                token_merge.apply_token_merging(p.sd_model)
+                from modules import sd_hijack_freeu, para_attention, teacache
+                sd_hijack_freeu.apply_freeu(p)
+                para_attention.apply_first_block_cache()
+                teacache.apply_teacache(p)
 
         if p.width is not None:
             p.width = 8 * int(p.width / 8)
         if p.height is not None:
             p.height = 8 * int(p.height / 8)
 
+        span.add_event('Before process callbacks')
         script_callbacks.before_process_callback(p)
         timer.process.record('pre')
 
@@ -206,8 +214,11 @@ def process_images(p: StableDiffusionProcessing) -> Processed:
         else:
             with context_hypertile_vae(p), context_hypertile_unet(p), tracer.start_as_current_span("process_images_inner"):
                 processed = process_images_inner(p)
-
+    except Exception as e:
+        span.set_status(Status(StatusCode.ERROR))
+        span.record_exception(e)
     finally:
+        span.add_event('post_process')
         pag.unapply()
         cfgzero.unapply()
         if shared.opts.cuda_compile_backend == 'none':
