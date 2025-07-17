@@ -801,6 +801,7 @@ def switch_pipe(cls: diffusers.DiffusionPipeline, pipeline: diffusers.DiffusionP
     return pipeline
 
 
+@tracer.start_as_current_span("clean_diffusers_pipe")
 def clean_diffuser_pipe(pipe):
     if pipe is not None and shared.sd_model_type == 'sdxl' and hasattr(pipe, 'config') and 'requires_aesthetics_score' in pipe.config and hasattr(pipe, '_internal_dict'):
         debug_process(f'Pipeline clean: {pipe.__class__.__name__}')
@@ -810,7 +811,7 @@ def clean_diffuser_pipe(pipe):
         del pipe._internal_dict
         pipe.register_to_config(**internal_dict)
 
-
+@tracer.start_as_current_span("set_diffusers_pipe")
 def set_diffuser_pipe(pipe, new_pipe_type):
     has_errors = False
     if new_pipe_type == DiffusersTaskType.TEXT_2_IMAGE:
