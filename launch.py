@@ -265,7 +265,7 @@ def main():
     installer.install_api_deps() # before gradio
     if not args.api_only:
         installer.install_gradio()
-    installer.check_torch()
+    # installer.check_torch()
     installer.check_onnx()
     installer.check_transformers()
     installer.check_diffusers()

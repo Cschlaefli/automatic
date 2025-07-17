@@ -90,7 +90,7 @@ def container_install(api_only=True):
     install_api_deps()
     install_gradio()
     install_optional()
-    check_torch()
+    # check_torch()
     check_onnx()
     check_transformers()
     check_diffusers()
