@@ -87,6 +87,7 @@ def container_install(api_only=True):
     # setup uv
     install("uv", "uv")
     # install all dependencies
+    set_environment()
     install_api_deps()
     install_gradio()
     install_optional()
