@@ -449,6 +449,7 @@ def start():
         host="0.0.0.0",
         port=7860,
         log_level="info",
+        factory=True
     )
 
 if __name__ == "__main__":
