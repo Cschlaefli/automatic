@@ -73,7 +73,8 @@ COPY . /app
 
 # COPY . /app
 # actually run sdnext
-CMD python launch.py --debug --extensions-only --listen --api-log --log-stdout --api-only --docs
+# CMD python launch.py --debug --extensions-only --listen --api-log --log-stdout --api-only --docs
+CMD python webui.py
 
 # expose port
 EXPOSE 7860

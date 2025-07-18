@@ -9,6 +9,7 @@ import logging
 import importlib
 import contextlib
 from threading import Thread
+import uvicorn
 from opentelemetry import trace
 import modules.loader
 import modules.hashes
@@ -37,8 +38,11 @@ import modules.textual_inversion
 import modules.script_callbacks
 import modules.api.middleware
 
-tracer = trace.get_tracer(__name__)
+from installer import set_environment, install_extensions
+from otel.instrument import otel_setup, instrument_api
+otel_setup()
 
+tracer = trace.get_tracer(__name__)
 
 if not modules.loader.initialized:
     timer.startup.record("libraries")
@@ -420,9 +424,10 @@ def webui(restart=False):
 
 @tracer.start_as_current_span("api_only")
 def api_only():
+    set_environment()
+    install_extensions()
     start_common()
     from fastapi import FastAPI
-    from otel.instrument import instrument_api
     app = FastAPI(**fastapi_args)
     instrument_api(app)
     modules.api.middleware.setup_middleware(app, shared.cmd_opts)
@@ -435,9 +440,13 @@ def api_only():
     server = shared.api.launch()
     return server
 
+def start():
+    uvicorn.run(
+        "webui:api_only",
+        host=shared.cmd_opts.server_name or "0.0.0.0",
+        port=shared.cmd_opts.server_port or 7860,
+        log_level="info",
+    )
 
 if __name__ == "__main__":
-    if shared.cmd_opts.api_only:
-        api_only()
-    else:
-        webui()
+    start()

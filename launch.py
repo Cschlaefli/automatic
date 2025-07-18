@@ -7,7 +7,6 @@ import shlex
 import subprocess
 from functools import lru_cache
 import installer
-from otel.instrument import otel_setup
 
 
 debug_install = installer.log.debug if os.environ.get('SD_INSTALL_DEBUG', None) is not None else lambda *args, **kwargs: None
@@ -234,7 +233,6 @@ def start_server(immediate=True, server=None):
 
 
 def main():
-    otel_setup()
     global args # pylint: disable=global-statement
     installer.ensure_base_requirements()
     init_args() # setup argparser and default folders
