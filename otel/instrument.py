@@ -5,6 +5,7 @@ from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
     DEFAULT_ENDPOINT
 )
 
+from opentelemetry.instrumentation.threading import ThreadingInstrumentor
 from opentelemetry.instrumentation.logging import LoggingInstrumentor
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.sdk.environment_variables import (
@@ -36,6 +37,8 @@ def otel_setup():
 
     LoggingInstrumentor().instrument(set_logging_format=True)
     logger.info("OpenTelemetry logging instrumentor setup")
+
+    ThreadingInstrumentor().instrument()
 
 
 def instrument_api(app: FastAPI):
