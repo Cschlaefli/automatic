@@ -19,7 +19,7 @@ otel_setup() # Avoid modules overriding otel log format
 import modules.loader
 import modules.hashes
 
-from installer import log, git_commit, custom_excepthook, set_environment, install_extensions
+from installer import log, git_commit, custom_excepthook, set_log_levels, set_environment, install_extensions
 from modules import timer, paths, shared, extensions, gr_tempdir, modelloader, modeldata
 from modules.call_queue import queue_lock, wrap_queued_call, wrap_gradio_gpu_call # pylint: disable=unused-import
 import modules.devices
@@ -425,6 +425,7 @@ def webui(restart=False):
 
 @tracer.start_as_current_span("api_only")
 def api_only():
+    set_log_levels()
     set_environment()
     install_extensions()
     start_common()

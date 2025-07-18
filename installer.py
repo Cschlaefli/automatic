@@ -133,11 +133,15 @@ def install_traceback(suppress: list = []):
     pretty_install(console=console)
 
 def stdout_logging():
-    """ Force use stdout for logging during container install
+    """ Force stdout for logging during container install
     """
-    logging.basicConfig(level=logging.ERROR,
+    logging.basicConfig(level=logging.INFO,
                         format='%(asctime)s | %(name)s | %(levelname)s | %(module)s | %(message)s',
                         handlers=[logging.StreamHandler(sys.stdout)]) # redirect default logger to stdout
+
+def set_log_levels():
+    """ Set log levels for specific libraries
+    """
     logging.getLogger("urllib3").setLevel(logging.ERROR)
     logging.getLogger("httpx").setLevel(logging.ERROR)
     logging.getLogger("diffusers").setLevel(logging.ERROR)
