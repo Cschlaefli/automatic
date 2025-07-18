@@ -11,10 +11,15 @@ import contextlib
 from threading import Thread
 import uvicorn
 from opentelemetry import trace
+
+from otel.instrument import otel_setup, instrument_api
+otel_setup() # Avoid modules overriding otel log format
+
+
 import modules.loader
 import modules.hashes
 
-from installer import log, git_commit, custom_excepthook
+from installer import log, git_commit, custom_excepthook, set_environment, install_extensions
 from modules import timer, paths, shared, extensions, gr_tempdir, modelloader, modeldata
 from modules.call_queue import queue_lock, wrap_queued_call, wrap_gradio_gpu_call # pylint: disable=unused-import
 import modules.devices
@@ -37,10 +42,6 @@ import modules.ui_extra_networks
 import modules.textual_inversion
 import modules.script_callbacks
 import modules.api.middleware
-
-from installer import set_environment, install_extensions
-from otel.instrument import otel_setup, instrument_api
-otel_setup()
 
 tracer = trace.get_tracer(__name__)
 

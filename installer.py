@@ -78,9 +78,8 @@ except Exception:
 
 def container_install(api_only=True):
     args.use_cuda = True
-    args.logs_stdout = True
+    stdout_logging()
     ensure_base_requirements()
-    # setup_logging() # why would we care
     check_python()
     # check_version() # who cares
     check_venv()
@@ -133,6 +132,18 @@ def install_traceback(suppress: list = []):
     )
     pretty_install(console=console)
 
+def stdout_logging():
+    """ Force use stdout for logging during container install
+    """
+    logging.basicConfig(level=logging.ERROR,
+                        format='%(asctime)s | %(name)s | %(levelname)s | %(module)s | %(message)s',
+                        handlers=[logging.StreamHandler(sys.stdout)]) # redirect default logger to stdout
+    logging.getLogger("urllib3").setLevel(logging.ERROR)
+    logging.getLogger("httpx").setLevel(logging.ERROR)
+    logging.getLogger("diffusers").setLevel(logging.ERROR)
+    logging.getLogger("torch").setLevel(logging.ERROR)
+    logging.getLogger("ControlNet").handlers = log.handlers
+    logging.getLogger("lycoris").handlers = log.handlers
 
 # setup console and file logging
 def setup_logging():
