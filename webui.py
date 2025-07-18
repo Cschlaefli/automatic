@@ -445,8 +445,8 @@ def api_only():
 def start():
     uvicorn.run(
         "webui:api_only",
-        host=shared.cmd_opts.server_name or "0.0.0.0",
-        port=shared.cmd_opts.server_port or 7860,
+        host="0.0.0.0",
+        port=7860,
         log_level="info",
     )
 
