@@ -12,7 +12,9 @@ dependencies = [
     "astunparse>=1.6.3",
     "basicsr",
     "blendmodes>=2025",
+    "clip",
     "compel==2.1.1",
+    "diffusers",
     "einops==0.8.1",
     "fastapi>=0.116.1",
     "fasteners>=0.19",
@@ -31,6 +33,7 @@ dependencies = [
     "numexpr==2.11.0",
     "numpy==2.1.2",
     "omegaconf>=2.3.0",
+    "open-clip-torch>=2.32.0",
     "opencv-contrib-python-headless==4.11.0.86",
     "optimum>=1.26.1",
     "orjson>=3.11.0",
@@ -64,8 +67,9 @@ dependencies = [
     "torch==2.7.0+cu128",
     "torchdiffeq>=0.2.5",
     "torchsde==0.2.6",
-    "torchvision!=0.20.0",
+    "torchvision==0.22.0+cu128",
     "tqdm>=4.67.1",
+    "transformers==4.53.2",
     "typing-extensions>=4.14.1",
     "urllib3>=1.26.19",
     "voluptuous>=0.15.2",
@@ -79,6 +83,9 @@ requests = { index = "pypi" }
 pillow = { index = "pypi" }
 tqdm = { index = "pypi" }
 typing-extensions = { index = "pypi" }
+diffusers = { git = "https://github.com/huggingface/diffusers", rev = "3c8b67b3711b668a6e7867e08b54280e51454eb5" }
+clip = { git = "https://github.com/openai/CLIP.git" }
+torchvision = { index = "pytorch" }
 torch = { index = "pytorch" }
 
 [tool.uv]
