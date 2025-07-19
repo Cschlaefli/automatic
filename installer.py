@@ -79,7 +79,7 @@ except Exception:
 def container_install(api_only=True):
     args.use_cuda = True
     stdout_logging()
-    ensure_base_requirements()
+    # ensure_base_requirements()
     check_python()
     # check_version() # who cares
     check_venv()
