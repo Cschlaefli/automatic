@@ -1081,34 +1081,27 @@ def run_extension_installer(folder):
 
 
 # get list of all enabled extensions
-def list_extensions_folder(folder, quiet=False):
-    disabled_extensions_all = opts.get('disable_all_extensions', 'none')
-    if disabled_extensions_all != 'none':
+def list_extensions_folder(folder: str, disabled_extensions : list[str])-> list[str]:
+    if opts.get('disable_all_extensions', True):
         return []
-    disabled_extensions = opts.get('disabled_extensions', [])
+    if not os.path.isdir(folder):
+        log.warning(f'Extensions: path="{folder}" not found')
+        return []
     enabled_extensions = [x for x in os.listdir(folder) if os.path.isdir(os.path.join(folder, x)) and x not in disabled_extensions and not x.startswith('.')]
-    if not quiet:
-        log.info(f'Extensions: path="{folder}" enabled={enabled_extensions}')
-    return enabled_extensions
+    log.debug(f'Extensions: path="{folder}" enabled={enabled_extensions}')
+    return [os.path.join(folder, ext) for ext in enabled_extensions]
 
 def container_install_extensions():
     from modules.paths import extensions_builtin_dir, extensions_dir
-    extensions_disabled = [e.lower() for e in opts.get('disabled_extensions', [])]
-    extension_folders = [extensions_builtin_dir, extensions_dir]
-    for folder in extension_folders:
-        if not os.path.isdir(folder):
-            continue
-        extensions = list_extensions_folder(folder, quiet=True)
-        log.debug(f'Container extensions: {extensions}')
-        for ext in extensions:
-            if os.path.basename(ext).lower() in extensions_disabled:
-                continue
-            t_start = time.time()
-            log.info(f'Container extension: {ext}')
-            run_extension_installer(os.path.join(folder, ext))
-
-
-
+    default_disabled = ['sd-extension-system-info',
+                        'sd-webui-agent-scheduler',
+                        'sdnext-modernui',
+                        'stable-diffusion-webui-rembg']
+    extensions_disabled = [e.lower() for e in opts.get('disabled_extensions', default_disabled)]
+    ext_paths = list_extensions_folder(extensions_builtin_dir)
+    ext_paths.extend(list_extensions_folder(extensions_dir, extensions_disabled))
+    for ext in ext_paths:
+        run_extension_installer(ext)
 
 # run installer for each installed and enabled extension and optionally update them
 def install_extensions(force=False):
@@ -1127,7 +1120,7 @@ def install_extensions(force=False):
     for folder in extension_folders:
         if not os.path.isdir(folder):
             continue
-        extensions = list_extensions_folder(folder, quiet=True)
+        extensions = list_extensions_folder(folder, extensions_disabled)
         log.debug(f'Extensions all: {extensions}')
         for ext in extensions:
             if os.path.basename(ext).lower() in extensions_disabled:
@@ -1361,8 +1354,8 @@ def set_environment():
     os.environ.setdefault('UVICORN_TIMEOUT_KEEP_ALIVE', '60')
     os.environ.setdefault('KINETO_LOG_LEVEL', '3')
     os.environ.setdefault('DO_NOT_TRACK', '1')
-    os.environ.setdefault('UV_INDEX_STRATEGY', 'unsafe-any-match')
-    os.environ.setdefault('UV_NO_BUILD_ISOLATION', '1')
+    # os.environ.setdefault('UV_INDEX_STRATEGY', 'unsafe-any-match')
+    # os.environ.setdefault('UV_NO_BUILD_ISOLATION', '1')
     os.environ.setdefault('HF_HUB_CACHE', opts.get('hfcache_dir', os.path.join(os.path.expanduser('~'), '.cache', 'huggingface', 'hub')))
     allocator = f'garbage_collection_threshold:{opts.get("torch_gc_threshold", 80)/100:0.2f},max_split_size_mb:512'
     if opts.get("torch_malloc", "native") == 'cudaMallocAsync':
