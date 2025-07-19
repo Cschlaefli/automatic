@@ -16,8 +16,6 @@ LABEL org.opencontainers.image.description="SD.Next: Advanced Implementation of 
 LABEL org.opencontainers.image.base.name="https://hub.docker.com/pytorch/pytorch:2.7.0-cuda12.8-cudnn9-runtime"
 LABEL org.opencontainers.image.version="latest"
 
-# import uv per https://docs.astral.sh/uv/guides/integration/docker/#installing-uv
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 # minimum install
 RUN apt-get -y update && \
@@ -46,6 +44,9 @@ ENV SD_DOCKER=true
 
 # tcmalloc is not required but it is highly recommended
 ENV LD_PRELOAD=libtcmalloc.so.4
+
+# import uv per https://docs.astral.sh/uv/guides/integration/docker/#installing-uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 WORKDIR /app
 # use system python and compile bytecode
