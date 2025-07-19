@@ -342,8 +342,9 @@ def installed(package, friendly: str = None, reload = False, quiet = False): # p
                 p = pkg.split('>=')
             else:
                 p = pkg.split('==')
-            spec = package_spec(p[0])
-            ok = ok and spec is not None
+            imported = importlib.import_module(p[0])
+            # spec = package_spec(p[0])
+            ok = ok and imported is not None
             if ok:
                 pkg_version = package_version(p[0])
                 if len(p) > 1:
