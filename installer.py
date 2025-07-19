@@ -1098,7 +1098,7 @@ def container_install_extensions():
                         'sdnext-modernui',
                         'stable-diffusion-webui-rembg']
     extensions_disabled = [e.lower() for e in opts.get('disabled_extensions', default_disabled)]
-    ext_paths = list_extensions_folder(extensions_builtin_dir)
+    ext_paths = list_extensions_folder(extensions_builtin_dir, extensions_disabled)
     ext_paths.extend(list_extensions_folder(extensions_dir, extensions_disabled))
     for ext in ext_paths:
         run_extension_installer(ext)
@@ -1373,15 +1373,16 @@ def check_extensions():
     newest_all = os.path.getmtime('requirements.txt')
     from modules.paths import extensions_builtin_dir, extensions_dir
     extension_folders = [extensions_builtin_dir] if args.safe else [extensions_builtin_dir, extensions_dir]
+    extensions_disabled = [e.lower() for e in opts.get('disabled_extensions', [])]
     disabled_extensions_all = opts.get('disable_all_extensions', 'none')
     if disabled_extensions_all != 'none':
         log.info(f'Extensions: disabled={disabled_extensions_all}')
     else:
-        log.info(f'Extensions: disabled={opts.get("disabled_extensions", [])}')
+        log.info(f'Extensions: disabled={extensions_disabled}')
     for folder in extension_folders:
         if not os.path.isdir(folder):
             continue
-        extensions = list_extensions_folder(folder)
+        extensions = list_extensions_folder(folder, extensions_disabled)
         for ext in extensions:
             newest = 0
             extension_dir = os.path.join(folder, ext)
