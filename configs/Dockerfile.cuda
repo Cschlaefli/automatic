@@ -16,6 +16,9 @@ LABEL org.opencontainers.image.description="SD.Next: Advanced Implementation of 
 LABEL org.opencontainers.image.base.name="https://hub.docker.com/pytorch/pytorch:2.7.0-cuda12.8-cudnn9-runtime"
 LABEL org.opencontainers.image.version="latest"
 
+# import uv per https://docs.astral.sh/uv/guides/integration/docker/#installing-uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
 # minimum install
 RUN apt-get -y update && \
   apt-get -y --no-install-recommends install git build-essential google-perftools curl ffmpeg && \
@@ -23,8 +26,6 @@ RUN apt-get -y update && \
 
 # optional if full cuda-dev is required by some downstream library
 # RUN ["apt-get", "-y", "nvidia-cuda-toolkit"]
-
-
 
 ARG NO_CACHE=true
 
@@ -47,26 +48,34 @@ ENV SD_DOCKER=true
 ENV LD_PRELOAD=libtcmalloc.so.4
 
 WORKDIR /app
+# use system python and compile bytecode
+ENV UV_SYSTEM_PYTHON=1 \
+    UV_COMPILE_BYTECODE=1
+# install deps
+COPY uv.lock uv.lock
+COPY pyproject.toml pyproject.toml
+RUN uv sync --locked --no-install-project
 
 #WIP for local build caching, mounting /opt/conda to local fs for now though
-COPY installer.py .
-COPY requirements.txt .
-COPY modules/rocm.py modules/rocm.py
-COPY otel/requirements.txt otel/requirements.txt
-# COPY launch.py .
-# COPY modules/cmd_args.py modules/cmd_args.py
+# COPY installer.py .
+# COPY requirements.txt .
 # COPY modules/rocm.py modules/rocm.py
-# COPY modules/script_loading.py modules/script_loading.py
-# COPY modules/zluda_installer.py modules/zluda_installer.py
-# COPY modules/paths.py modules/paths.py
-# COPY modules/timer.py modules/timer.py
-# COPY modules/errors.py modules/errors.py
-# COPY extensions/. ./extensions/
-# COPY extensions-builtin/. ./extensions-builtin/
-RUN python installer.py
+# COPY otel/requirements.txt otel/requirements.txt
+# # COPY launch.py .
+# # COPY modules/cmd_args.py modules/cmd_args.py
+# # COPY modules/rocm.py modules/rocm.py
+# # COPY modules/script_loading.py modules/script_loading.py
+# # COPY modules/zluda_installer.py modules/zluda_installer.py
+# # COPY modules/paths.py modules/paths.py
+# # COPY modules/timer.py modules/timer.py
+# # COPY modules/errors.py modules/errors.py
+# # COPY extensions/. ./extensions/
+# # COPY extensions-builtin/. ./extensions-builtin/
+# RUN python installer.py
 
 # copy sdnext
 COPY . /app
+RUN uv sync --locked
 # sdnext will run all necessary pip install ops and then exit
 # RUN ["python", "/app/launch.py", "--debug", "--uv", "--api-only", "--use-cuda", "--log-stdout", "--test", "--optional"]
 # preinstall additional packages to avoid installation during runtime
