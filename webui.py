@@ -444,13 +444,13 @@ def api_only():
 def verify_cuda_device():
     import torch
     if not torch.cuda.is_available():
-        log.error("CUDA is not available. Please check your PyTorch installation.")
-        raise RuntimeError("CUDA is not available.")
-    log.info("CUDA device count: %d", torch.cuda.device_count())
-    if torch.cuda.device_count() == 0:
-        log.error("No CUDA devices found. Please check your GPU setup.")
-        raise RuntimeError("No CUDA devices found.")
-    log.info("CUDA device name: %s", torch.cuda.get_device_name(0))
+        raise RuntimeError("cuda unavailable")
+    device_count = torch.cuda.device_count()
+    if device_count < 1:
+        raise RuntimeError("No CUDA devices found")
+    device_name = torch.cuda.get_device_name(0)
+    if not device_name:
+        raise RuntimeError("Failed to get CUDA device")
 
 
 def start():
