@@ -425,7 +425,6 @@ def mount_subpath(app):
 
 @tracer.start_as_current_span("api_only")
 def api_only():
-    verify_cuda_device()
     set_log_levels()
     set_environment()
     container_install_extensions()
@@ -455,6 +454,7 @@ def verify_cuda_device():
 
 
 def start():
+    verify_cuda_device()
     api = api_only()
     uvicorn.run(
         app=api.app,
