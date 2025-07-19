@@ -1264,7 +1264,7 @@ def install_gradio():
 
 def install_api_deps():
     # seperate out non-gradio API dependencies
-    install('dctorch==0.1.2', no_deps=True, quiet=True)
+    # install('dctorch==0.1.2', no_deps=True, quiet=True)
     pkgs = ['fastapi', 'websockets', 'semantic-version', 'matplotlib']
     for pkg in pkgs:
         if not installed(pkg, quiet=True):
@@ -1281,7 +1281,7 @@ def install_optional():
     install('torchao==0.10.0', ignore=True, quiet=True)
     install('bitsandbytes==0.46.1', ignore=True, quiet=True)
     install('pynvml', ignore=True, quiet=True)
-    install('ultralytics==8.3.40', ignore=True, quiet=True)
+    install('ultralytics==8.3.40', ignore=True, quiet=True) # dep for modules/yolo
     install('Cython', ignore=True, quiet=True)
     install('git+https://github.com/deepinsight/insightface@554a05561cb71cfebb4e012dfea48807f845a0c2#subdirectory=python-package', 'insightface') # insightface==0.7.3 with patches
     install('albumentations==1.4.3', ignore=True, quiet=True)
