@@ -49,9 +49,11 @@ ENV LD_PRELOAD=libtcmalloc.so.4
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 WORKDIR /app
-# use system python and compile bytecode
-ENV UV_SYSTEM_PYTHON=1 \
-    UV_COMPILE_BYTECODE=1
+# compile bytecode, and use container venv
+ENV UV_COMPILE_BYTECODE=1 \
+    VIRTUAL_ENV=/opt/conda/bin/activate \
+    PATH="/opt/conda/bin:$PATH"
+  
 # install deps
 COPY uv.lock uv.lock
 COPY pyproject.toml pyproject.toml
