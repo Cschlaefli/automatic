@@ -441,7 +441,20 @@ def api_only():
     log.info(f"Startup time: {timer.startup.summary()}")
     return shared.api
 
+def verify_cuda_device():
+    import torch
+    if not torch.cuda.is_available():
+        log.error("CUDA is not available. Please check your PyTorch installation.")
+        raise RuntimeError("CUDA is not available.")
+    log.info("CUDA device count:", torch.cuda.device_count())
+    if torch.cuda.device_count() == 0:
+        log.error("No CUDA devices found. Please check your GPU setup.")
+        raise RuntimeError("No CUDA devices found.")
+    log.info("CUDA device name:", torch.cuda.get_device_name(0))
+
+
 def start():
+    verify_cuda_device()
     api = api_only()
     uvicorn.run(
         app=api.app,
