@@ -31,7 +31,6 @@ tunableop_results*.csv
 *.pt
 *.bin
 *.optim
-*.lock
 *.zip
 *.rar
 *.7z
