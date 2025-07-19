@@ -32,34 +32,35 @@ def setup_middleware(app: FastAPI, cmd_opts):
         app.add_middleware(CORSMiddleware, allow_origins=cmd_opts.cors_origins.split(','), allow_methods=['*'], allow_credentials=True, allow_headers=['*'])
     elif cmd_opts.cors_regex:
         app.add_middleware(CORSMiddleware, allow_origin_regex=cmd_opts.cors_regex, allow_methods=['*'], allow_credentials=True, allow_headers=['*'])
+    
 
-    @app.middleware("http")
-    async def log_and_time(req: Request, call_next):
-        try:
-            ts = time.time()
-            res: Response = await call_next(req)
-            duration = str(round(time.time() - ts, 4))
-            res.headers["X-Process-Time"] = duration
-            endpoint = req.scope.get('path', 'err')
-            token = req.cookies.get("access-token") or req.cookies.get("access-token-unsecure")
-            if (cmd_opts.api_log or cmd_opts.api_only) and endpoint.startswith('/sdapi'):
-                if '/sdapi/v1/log' in endpoint or '/sdapi/v1/browser' in endpoint:
-                    return res
-                log.info('API user={user} code={code} {prot}/{ver} {method} {endpoint} {cli} {duration}'.format( # pylint: disable=consider-using-f-string, logging-format-interpolation
-                    user = app.tokens.get(token) if hasattr(app, 'tokens') else None,
-                    code = res.status_code,
-                    ver = req.scope.get('http_version', '0.0'),
-                    cli = req.scope.get('client', ('0:0.0.0', 0))[0],
-                    prot = req.scope.get('scheme', 'err'),
-                    method = req.scope.get('method', 'err'),
-                    endpoint = endpoint,
-                    duration = duration,
-                ))
-            return res
-        except CancelledError:
-            log.warning('WebSocket closed (ignore asyncio.exceptions.CancelledError)')
-        except BaseException as e:
-            return handle_exception(req, e)
+    # @app.middleware("http")
+    # async def log_and_time(req: Request, call_next):
+    #     try:
+    #         ts = time.time()
+    #         res: Response = await call_next(req)
+    #         duration = str(round(time.time() - ts, 4))
+    #         res.headers["X-Process-Time"] = duration
+    #         endpoint = req.scope.get('path', 'err')
+    #         token = req.cookies.get("access-token") or req.cookies.get("access-token-unsecure")
+    #         if (cmd_opts.api_log or cmd_opts.api_only) and endpoint.startswith('/sdapi'):
+    #             if '/sdapi/v1/log' in endpoint or '/sdapi/v1/browser' in endpoint:
+    #                 return res
+    #             log.info('API user={user} code={code} {prot}/{ver} {method} {endpoint} {cli} {duration}'.format( # pylint: disable=consider-using-f-string, logging-format-interpolation
+    #                 user = app.tokens.get(token) if hasattr(app, 'tokens') else None,
+    #                 code = res.status_code,
+    #                 ver = req.scope.get('http_version', '0.0'),
+    #                 cli = req.scope.get('client', ('0:0.0.0', 0))[0],
+    #                 prot = req.scope.get('scheme', 'err'),
+    #                 method = req.scope.get('method', 'err'),
+    #                 endpoint = endpoint,
+    #                 duration = duration,
+    #             ))
+    #         return res
+    #     except CancelledError:
+    #         log.warning('WebSocket closed (ignore asyncio.exceptions.CancelledError)')
+    #     except BaseException as e:
+    #         return handle_exception(req, e)
 
     def handle_exception(req: Request, e: Exception):
         err = {

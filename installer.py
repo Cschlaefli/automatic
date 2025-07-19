@@ -1101,6 +1101,7 @@ def container_install_extensions():
     ext_paths = list_extensions_folder(extensions_builtin_dir, extensions_disabled)
     ext_paths.extend(list_extensions_folder(extensions_dir, extensions_disabled))
     for ext in ext_paths:
+        log.info('Running extension installer: %s', ext)
         run_extension_installer(ext)
 
 # run installer for each installed and enabled extension and optionally update them
