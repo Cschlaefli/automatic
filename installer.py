@@ -90,7 +90,7 @@ def container_install(api_only=True):
     install_api_deps()
     install_gradio()
     install_optional()
-    # check_torch()
+    # check_torch() # using container torch
     check_onnx()
     check_transformers()
     check_diffusers()
@@ -104,7 +104,7 @@ def container_install(api_only=True):
         update_wiki()
     if api_only:
         # install otel requirements
-        pip('install -r otel/requirements.txt')
+        pip('-r otel/requirements.txt')
 
 
 def get_console():
@@ -1090,6 +1090,24 @@ def list_extensions_folder(folder, quiet=False):
     if not quiet:
         log.info(f'Extensions: path="{folder}" enabled={enabled_extensions}')
     return enabled_extensions
+
+def container_install_extensions():
+    from modules.paths import extensions_builtin_dir, extensions_dir
+    extensions_disabled = [e.lower() for e in opts.get('disabled_extensions', [])]
+    extension_folders = [extensions_builtin_dir, extensions_dir]
+    for folder in extension_folders:
+        if not os.path.isdir(folder):
+            continue
+        extensions = list_extensions_folder(folder, quiet=True)
+        log.debug(f'Container extensions: {extensions}')
+        for ext in extensions:
+            if os.path.basename(ext).lower() in extensions_disabled:
+                continue
+            t_start = time.time()
+            log.info(f'Container extension: {ext}')
+            run_extension_installer(os.path.join(folder, ext))
+
+
 
 
 # run installer for each installed and enabled extension and optionally update them
