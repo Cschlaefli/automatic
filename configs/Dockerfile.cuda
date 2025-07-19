@@ -57,7 +57,7 @@ ENV UV_COMPILE_BYTECODE=1 \
 # install deps
 COPY uv.lock uv.lock
 COPY pyproject.toml pyproject.toml
-RUN uv sync --locked --no-install-project
+RUN uv sync --active --locked --no-install-project
 
 #WIP for local build caching, mounting /opt/conda to local fs for now though
 # COPY installer.py .
@@ -78,7 +78,7 @@ RUN uv sync --locked --no-install-project
 
 # copy sdnext
 COPY . /app
-RUN uv sync --locked
+RUN uv sync --active --locked
 # sdnext will run all necessary pip install ops and then exit
 # RUN ["python", "/app/launch.py", "--debug", "--uv", "--api-only", "--use-cuda", "--log-stdout", "--test", "--optional"]
 # preinstall additional packages to avoid installation during runtime
