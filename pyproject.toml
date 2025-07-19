@@ -76,6 +76,7 @@ dependencies = [
     "tokenizers==0.21.2",
     "toml>=0.10.2",
     "torch==2.7.0+cu128",
+    "torchaudio==2.7.0+cu128",
     "torchdiffeq>=0.2.5",
     "torchsde==0.2.6",
     "torchvision==0.22.0+cu128",
@@ -98,6 +99,7 @@ diffusers = { git = "https://github.com/huggingface/diffusers", rev = "3c8b67b37
 clip = { git = "https://github.com/openai/CLIP.git" }
 torchvision = { index = "pytorch" }
 torch = { index = "pytorch" }
+torchaudio = { index = "pytorch" }
 
 [tool.uv]
 default-groups = ["gradio", "optional"]
