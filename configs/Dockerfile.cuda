@@ -51,7 +51,7 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 WORKDIR /app
 # compile bytecode, and use container venv
 ENV UV_COMPILE_BYTECODE=1 \
-    VIRTUAL_ENV=/opt/conda/bin/activate \
+    VIRTUAL_ENV=/opt/conda \
     PATH="/opt/conda/bin:$PATH"
   
 # install deps
