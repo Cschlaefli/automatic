@@ -439,17 +439,20 @@ def api_only():
     modules.script_callbacks.app_started_callback(None, app)
     modules.sd_models.write_metadata()
     log.info(f"Startup time: {timer.startup.summary()}")
-    server = shared.api.launch()
-    return server
+    return shared.api
 
 def start():
+    api = api_only()
     uvicorn.run(
-        "webui:api_only",
+        app=api.app,
         host="0.0.0.0",
         port=7860,
         log_level="info",
-        factory=True
+        # timeout_keep_alive=30,
+        timeout_graceful_shutdown=90
     )
+
+
 
 if __name__ == "__main__":
     start()
