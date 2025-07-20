@@ -111,7 +111,7 @@ RUN uv sync --active --locked
 # COPY . /app
 # actually run sdnext
 # CMD python launch.py --debug --extensions-only --listen --api-log --log-stdout --api-only --docs
-CMD python webui.py
+CMD python webui.py --listen --docs
 
 # expose port
 EXPOSE 7860
