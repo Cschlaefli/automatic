@@ -10,10 +10,8 @@ import importlib
 import contextlib
 from threading import Thread
 import uvicorn
-from opentelemetry import trace
 
 from otel.instrument import otel_setup, instrument_api
-otel_setup() # Avoid modules overriding otel log format
 
 
 import modules.loader
@@ -43,7 +41,6 @@ import modules.textual_inversion
 import modules.script_callbacks
 import modules.api.middleware
 
-tracer = trace.get_tracer(__name__)
 
 if not modules.loader.initialized:
     timer.startup.record("libraries")
@@ -68,7 +65,6 @@ fastapi_args = {
     # "redoc_url": "/redocs" if cmd_opts.docs else None,
 }
 
-@tracer.start_as_current_span("initialize")
 def initialize():
     log.debug('Initializing')
 
@@ -153,7 +149,6 @@ def initialize():
 
     signal.signal(signal.SIGINT, sigint_handler)
 
-@tracer.start_as_current_span("load_model")
 def load_model():
     modeldata.model_data.locked = False
     if not shared.opts.sd_checkpoint_autoload and shared.cmd_opts.ckpt is None:
@@ -176,7 +171,6 @@ def load_model():
     shared.opts.onchange("temp_dir", gr_tempdir.on_tmpdir_changed)
     timer.startup.record("onchange")
 
-@tracer.start_as_current_span("create_api")
 def create_api(app):
     log.debug('API initialize')
     from modules.api.api import Api
@@ -229,7 +223,6 @@ def get_remote_ip():
     except Exception:
         return None
 
-@tracer.start_as_current_span("start_common")
 def start_common():
     log.debug('Entering start sequence')
     if shared.cmd_opts.data_dir is not None and len(shared.cmd_opts.data_dir) > 0:
@@ -423,8 +416,8 @@ def mount_subpath(app):
 #     return shared.demo.server
 
 
-@tracer.start_as_current_span("api_only")
 def api_only():
+    otel_setup() # Avoid modules overriding otel log format
     verify_cuda_device()
     set_log_levels()
     set_environment()
