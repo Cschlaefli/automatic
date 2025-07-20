@@ -425,6 +425,7 @@ def mount_subpath(app):
 
 @tracer.start_as_current_span("api_only")
 def api_only():
+    verify_cuda_device()
     set_log_levels()
     set_environment()
     container_install_extensions()
@@ -451,10 +452,10 @@ def verify_cuda_device():
     device_name = torch.cuda.get_device_name(0)
     if not device_name:
         raise RuntimeError("Failed to get CUDA device")
+    log.info(f"Using CUDA device: {device_name} (count={device_count})")
 
 
 def start():
-    verify_cuda_device()
     api = api_only()
     uvicorn.run(
         app=api.app,
