@@ -29,6 +29,29 @@ class Script(scripts_manager.Script):
     def title(self):
         return "XYZ Grid"
 
+    def default_args(self, is_img2img):
+        return [
+            False,  # enabled
+            '', '', '', # x type, values, values dropdown
+            '', '', '', # y type, values, values dropdown
+            '', '', '', # z type, values, values dropdown
+            False,  # csv mode
+            True,  # draw legend
+            False,  # no fixed seeds
+            True,  # include main grid
+            False,  # include sub grids
+            False,  # include images
+            False,  # include time
+            False,  # include text
+            0,  # margin size
+            False,  # create video
+            'None',  # video type
+            1.0,  # video duration
+            False,  # video loop
+            False,  # video pad
+            False,  # video interpolate
+        ]
+
     def ui(self, is_img2img):
         self.current_axis_options = [x for x in axis_options if type(x) == AxisOption or x.is_img2img == is_img2img]
         with gr.Row():

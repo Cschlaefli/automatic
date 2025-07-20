@@ -51,6 +51,9 @@ class Script(scripts_manager.Script):
     def show(self, is_img2img):
         return True
 
+    def default_args(self, is_img2img):
+        return [ENCODERS[0]]  # default to first encoder
+
     def ui(self, _is_img2img):
         with gr.Row():
             gr.HTML('<a href="https://github.com/mulanai/MuLan">&nbsp MuLan: Multi Language Prompts</a><br>')

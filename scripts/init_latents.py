@@ -10,6 +10,9 @@ class Script(scripts_manager.Script):
     def show(self, is_img2img):
         return scripts_manager.AlwaysVisible
 
+    def default_args(self, is_img2img):
+        return []
+
     @staticmethod
     def get_latents(p):
         import torch

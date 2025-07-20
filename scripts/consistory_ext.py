@@ -31,7 +31,23 @@ class Script(scripts_manager.Script):
         self.anchor_cache_first_stage = None
         self.anchor_cache_second_stage = None
         shared.log.debug('ConsiStory reset anchors')
-    
+
+    def default_args(self, is_img2img):
+        return [
+            '',  # subject
+            '',  # concepts
+            '',  # prompts
+            0.5,  # dropout
+            True,  # sampler
+            True,  # steps
+            False,  # same latent
+            True,  # queries
+            True,  # sdsa
+            False,  # freeu
+            '0.6, 0.4, 1.1, 1.2',  # freeu preset
+            '10, 20, 0.8',  # alpha preset
+            False,  # injection
+        ]    
 
     def ui(self, _is_img2img): # ui elements
         with gr.Row():

@@ -32,6 +32,17 @@ class Script(scripts_manager.Script):
         else:
             return [['group_norm', 'layer_norm', 'attention', 'adain_queries', 'adain_keys', 'adain_values', 'full_attention_share'], 1.0, 1, 0.5]
 
+    def default_args(self, is_img2img):
+        return [
+            None,  # image
+            '',  # prompt
+            False,  # scheduler
+            ['attention', 'adain_queries', 'adain_keys'],  # shared options
+            1.0,  # shared score scale
+            0,  # shared score shift
+            0.0,  # only self level
+        ]
+
     def ui(self, _is_img2img): # ui elements
         with gr.Row():
             gr.HTML('<a href="https://github.com/google/style-aligned">&nbsp Style Aligned Image Generation</a><br><br>')
