@@ -11,8 +11,11 @@ import contextlib
 from threading import Thread
 import uvicorn
 
+from opentelemetry import trace
+
 from otel.instrument import otel_setup, instrument_api
 
+otel_setup() # Avoid modules overriding otel log format
 
 import modules.loader
 import modules.hashes
@@ -417,7 +420,6 @@ def mount_subpath(app):
 
 
 def api_only():
-    otel_setup() # Avoid modules overriding otel log format
     verify_cuda_device()
     set_log_levels()
     set_environment()

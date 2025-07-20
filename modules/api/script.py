@@ -69,8 +69,8 @@ def init_default_script_args(script_runner):
     # get default values
     if gr is None:
         return script_args
-    try:
-        for script in script_runner.scripts:
+    for script in script_runner.scripts:
+        try:
             ui_default_values = script.default_args(script.is_img2img)
             script_args[script.args_from:script.args_to] = ui_default_values
         # with gr.Blocks(): # will throw errors calling ui function without this
@@ -79,8 +79,8 @@ def init_default_script_args(script_runner):
                 #     for elem in script.ui(script.is_img2img):
                 #         ui_default_values.append(elem.value)
                 #     script_args[script.args_from:script.args_to] = ui_default_values
-    except Exception as e:
-        log.error(f"Error initializing script args for {script.title()} {e}")
+        except Exception as e:
+            log.error(f"Error initializing script args for {script.title()} {e}")
     return script_args
 
 

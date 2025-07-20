@@ -40,7 +40,6 @@ def otel_setup():
 
     ThreadingInstrumentor().instrument()
 
-
 def instrument_api(app: FastAPI):
     FastAPIInstrumentor.instrument_app(app,
                                        tracer_provider=get_tracer_provider(),

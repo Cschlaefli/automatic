@@ -22,6 +22,7 @@ pkg_resources, setuptools, distutils = None, None, None # defined via ensure_bas
 version = None
 current_branch = None
 log = logging.getLogger("sd")
+log.setLevel(logging.INFO)
 console = None
 debug = log.debug if os.environ.get('SD_INSTALL_DEBUG', None) is not None else lambda *args, **kwargs: None
 pip_log = '--log pip.log ' if os.environ.get('SD_PIP_DEBUG', None) is not None else ''
