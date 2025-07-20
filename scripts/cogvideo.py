@@ -27,6 +27,8 @@ class Script(scripts_manager.Script):
     def show(self, is_img2img):
         return True
 
+    def default_args(self, is_img2img):
+        return ['THUDM/CogVideoX-2b', 'DDIM', 49, 6.0, 'balanced', True, 'None', 10, False, False, False, None, None]
 
     def ui(self, is_img2img):
         with gr.Row():

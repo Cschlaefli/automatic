@@ -35,6 +35,16 @@ class Script(scripts_manager.Script):
     def show(self, is_img2img):
         return img2img if is_img2img else txt2img
 
+    def default_args(self, is_img2img):
+        return [
+            "#04F404",  # Default to green screen green
+            65,  # Tolerance
+            0.0,  # Mask dilate
+            0,  # Mask erode
+            0.15,  # Mask blur
+            0.9,  # Denoising strength
+        ]
+
     # Define UI for pipeline
     def ui(self, _is_img2img):
         with gr.Row():

@@ -16,6 +16,9 @@ class Script(scripts_manager.Script):
 
     def show(self, is_img2img):
         return True
+    
+    def default_args(self, is_img2img):
+        return ['7,8,9', 1.0, 0.01, 0.2]
 
     # return signature is array of gradio components
     def ui(self, _is_img2img):

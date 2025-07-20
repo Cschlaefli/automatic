@@ -9,6 +9,9 @@ import modules.sd_samplers
 class Script(scripts_manager.Script):
     def title(self):
         return "Prompt matrix"
+    
+    def default_args(self, is_img2img):
+        return [False, False, "positive", "comma", 0]
 
     def ui(self, is_img2img):
         with gr.Row():

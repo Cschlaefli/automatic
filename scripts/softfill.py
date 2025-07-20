@@ -1616,6 +1616,9 @@ class Script(scripts_manager.Script):
     def show(self, is_img2img):
         return is_img2img
 
+    def default_args(self, is_img2img):
+        return [True, True, 0.0]
+
     def ui(self, _is_img2img):
         with gr.Row():
             gr.HTML('<a href="https://github.com/zacheryvaughn/softfill-pipelines">&nbsp SoftFill: Inpaint with Differential diffusion</a><br>')

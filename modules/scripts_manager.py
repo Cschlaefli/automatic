@@ -55,6 +55,13 @@ class Script:
     def title(self):
         """this function should return the title of the script. This is what will be displayed in the dropdown menu."""
         raise NotImplementedError
+    
+    def default_args(self, is_img2img):
+        """this function should return a list of default arguments for the script.
+        This is used to initialize the script arguments in the UI.
+        The returned value should be a list of values that will be passed to the ui() function.
+        """
+        raise NotImplementedError
 
     def ui(self, is_img2img):
         """this function should create gradio UI elements. See https://gradio.app/docs/#components

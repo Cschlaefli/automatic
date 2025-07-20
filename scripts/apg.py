@@ -17,6 +17,9 @@ class Script(scripts_manager.Script):
     def show(self, is_img2img):
         return not is_img2img
 
+    def default_args(self, is_img2img):
+        return [1.0, -0.50, 0.0]
+
     def ui(self, _is_img2img): # ui elements
         with gr.Row():
             gr.HTML('<a href="https://arxiv.org/abs/2410.02416">&nbsp APG: Adaptive Projected Guidance</a><br>')

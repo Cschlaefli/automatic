@@ -31,6 +31,7 @@ class Script(scripts_manager.Script):
         self.anchor_cache_first_stage = None
         self.anchor_cache_second_stage = None
         shared.log.debug('ConsiStory reset anchors')
+    
 
     def ui(self, _is_img2img): # ui elements
         with gr.Row():

@@ -43,6 +43,9 @@ class Script(scripts_manager.Script):
     def display_advanced(self, advanced):
         return [gr.update(visible=advanced), gr.update(visible=advanced)]
 
+    def default_args(self, is_img2img):
+        return [1] + ['None'] * MAX_ADAPTERS + [0.5] * MAX_ADAPTERS + [False] * MAX_ADAPTERS + [0.0] * MAX_ADAPTERS + [1.0] * MAX_ADAPTERS + [''] * MAX_ADAPTERS + [False] + ['{}']
+
     def ui(self, _is_img2img):
         with gr.Accordion('IP Adapters', open=False, elem_id='ipadapter', elem_classes=['ipadapter']):
             units = []

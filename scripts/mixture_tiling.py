@@ -31,6 +31,9 @@ class Script(scripts_manager.Script):
     def show(self, is_img2img):
         return not is_img2img
 
+    def default_args(self, is_img2img):
+        return [1, 1, 0.5, 0.5]
+
     def ui(self, _is_img2img):
         with gr.Row():
             gr.HTML('<a href="https://arxiv.org/abs/2302.02412">&nbsp Mixture Tiling: Scene Composition</a><br>')

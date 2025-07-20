@@ -46,6 +46,26 @@ class Script(scripts_manager.Script):
             gr.update(visible=mode=='PhotoMaker'),
         ]
 
+    def default_args(self, is_img2img):
+        mode = "None"
+        gallery = None
+        reswapper_model = 'ReSwapper 256 0.2'
+        reswapper_original = False
+        ip_model = 'FaceID Base'
+        ip_override = True
+        ip_cache = True
+        ip_strength = 0.1
+        ip_structure = 0.1
+        id_strength = 0.1
+        id_conditioning = 0.1
+        id_cache = True
+        pm_model = 'PhotoMaker v2'
+        pm_trigger = 'face'
+        pm_strength = 0.1
+        pm_start = 0.1
+        fs_cache = True
+        return [mode, gallery, reswapper_model, reswapper_original, ip_model, ip_override, ip_cache, ip_strength, ip_structure, id_strength, id_conditioning, id_cache, pm_model, pm_trigger, pm_strength, pm_start, fs_cache]
+
     # return signature is array of gradio components
     def ui(self, _is_img2img):
         with gr.Row():

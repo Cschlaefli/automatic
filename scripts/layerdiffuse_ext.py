@@ -37,6 +37,9 @@ class Script(scripts_manager.Script):
             return '<div style="color: darkgreen">LayerDiffuse: active</div><br>'
         return '<div style="color: darkgray">LayerDiffuse: inactive</div><br>'
 
+    def default_args(self, is_img2img):
+        return []
+
     def ui(self, _is_img2img):
         with gr.Row():
             gr.HTML("""

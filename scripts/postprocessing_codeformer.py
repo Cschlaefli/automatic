@@ -9,6 +9,7 @@ class ScriptPostprocessingCodeFormer(scripts_postprocessing.ScriptPostprocessing
     name = "CodeFormer"
     order = 3000
 
+
     def ui(self):
         with gr.Accordion('Restore faces: CodeFormer', open = False):
             with gr.Row():

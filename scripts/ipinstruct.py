@@ -38,6 +38,8 @@ class Script(scripts_manager.Script):
         if self.lib is None:
             self.lib = importlib.import_module('ip_instruct.ip_adapter')
 
+    def default_args(self, is_img2img):
+        return [None, None, 1.0, 4, 6.0, 0.5]
 
     def ui(self, _is_img2img): # ui elements
         with gr.Row():

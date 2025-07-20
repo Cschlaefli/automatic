@@ -26,6 +26,9 @@ class Script(scripts_manager.Script):
                 updates.append(gr.update(visible=(x < x_tiles) and (y < y_tiles)))
         return updates
 
+    def default_args(self, is_img2img):
+        return [1, 1, 128, 128] + [''] * (max_xtiles * max_ytiles)
+
     def ui(self, _is_img2img): # ui elements
         with gr.Row():
             gr.HTML('<a href="https://huggingface.co/posts/elismasilva/251775641926329">&nbsp Mixture-of-Diffusers</a><br>')

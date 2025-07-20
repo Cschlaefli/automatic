@@ -13,6 +13,9 @@ class Script(scripts_manager.Script):
     def show(self, is_img2img):
         return is_img2img
 
+    def default_args(self, is_img2img):
+        return [128, 4, ['left', 'right', 'up', 'down']]
+
     def ui(self, is_img2img):
         if not is_img2img:
             return None

@@ -19,6 +19,15 @@ class Script(scripts_manager.Script):
     def show(self, is_img2img):
         self.is_img2img = is_img2img
         return True
+    
+    def default_args(self, is_img2img):
+        return [
+            2.0, True, 1.0, 35,
+            True, 1.0, 0.75,
+            True, 2.0, 0.75,
+            False, 3.0, 0.75,
+            False, 4.0, 0.75
+        ]
 
     def ui(self, _is_img2img): # ui elements
         with gr.Row():

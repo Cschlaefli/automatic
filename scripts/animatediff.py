@@ -193,6 +193,25 @@ class Script(scripts_manager.Script):
     def show(self, is_img2img):
         return not is_img2img
 
+    def default_args(self, is_img2img):
+        return [
+            'None',  # adapter_index
+            16,  # frames
+            'None',  # lora_index
+            1.0,  # strength
+            True,  # latent_mode
+            'None',  # video_type
+            1.0,  # duration
+            False,  # gif_loop
+            False,  # mp4_pad
+            False,  # mp4_interpolate
+            True,  # override_scheduler
+            'none',  # fi_method
+            3,  # fi_iters
+            4,  # fi_order
+            0.25,  # fi_spatial
+            0.25,  # fi_temporal
+        ]
 
     def ui(self, is_img2img):
         with gr.Row():

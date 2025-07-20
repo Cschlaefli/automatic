@@ -12,6 +12,9 @@ class Script(scripts_manager.Script):
     def show(self, is_img2img):
         return True
 
+    def default_args(self, is_img2img):
+        return ['', 0.5, 5.0, None, '', 0.5, 5.0, None]
+
     def ui(self, _is_img2img):
         with gr.Row():
             gr.HTML('<a href="https://github.com/genforce/ctrl-x">&nbsp Ctrl-X: Controlling Structure and Appearance</a><br>')

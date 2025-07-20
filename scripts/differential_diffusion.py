@@ -1862,6 +1862,11 @@ class Script(scripts_manager.Script):
 
     def show(self, is_img2img):
         return is_img2img
+    
+    def default_args(self, is_img2img):
+        return [
+            True, 1.0, False, 'None', None
+        ]
 
     def ui(self, _is_img2img):
         with gr.Row():

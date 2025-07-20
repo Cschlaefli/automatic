@@ -69,6 +69,9 @@ class Script(scripts_manager.Script):
         prompt = cell.value if hasattr(cell, 'value') else cell
         shared.log.info(f'Prompt enhance: prompt="{prompt}"')
         return prompt
+    
+    def default_args(self, is_img2img):
+        return [False, 0.7, 1.2, 128]
 
     def ui(self, _is_img2img):
         with gr.Row():

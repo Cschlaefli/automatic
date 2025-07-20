@@ -421,6 +421,23 @@ class Script(scripts_manager.Script):
         model_type = self.options.models.get(name, {}).get('type', None)
         model_file = self.options.models.get(name, {}).get('file', None)
         return [model_repo, model_gguf, model_type, model_file]
+    
+    def default_args(self, is_img2img):
+        return [
+            False,  # apply_prompt
+            False,  # apply_auto
+            self.options.default,  # llm_model
+            '',  # prompt_system
+            '',  # prompt_prefix
+            '',  # prompt_suffix
+            self.options.max_tokens,  # max_tokens
+            self.options.do_sample,  # do_sample
+            self.options.temperature,  # temperature
+            self.options.repetition_penalty,  # repetition_penalty
+            self.options.thinking_mode,  # thinking_mode
+            True,  # nsfw_mode
+            self.prompt,  # prompt
+        ]
 
     def ui(self, _is_img2img):
         with gr.Accordion('Prompt enhance', open=False, elem_id='prompt_enhance'):

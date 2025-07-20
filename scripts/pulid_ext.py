@@ -79,6 +79,12 @@ class Script(scripts_manager.Script):
                 shared.log.warning(f'IP adapter failed to load image: {e}')
         return gr.update(value=uploaded_images, visible=len(uploaded_images) > 0)
 
+    def default_args(self, is_img2img):
+        return [
+            0.8, 20, 'dpmpp_sde', 'v2', 'v1.1', False, True,
+            gr.update(value=uploaded_images, visible=len(uploaded_images) > 0)
+        ]
+
     # return signature is array of gradio components
     def ui(self, _is_img2img):
         with gr.Row():
