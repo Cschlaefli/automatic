@@ -49,16 +49,15 @@ def otel_setup():
     ThreadingInstrumentor().instrument()
     logger.info("OpenTelemetry threading instrumented")
 
-    prometheus_exporter = PrometheusMetricReader()
-    reader = PeriodicExportingMetricReader(prometheus_exporter)
-    meter_provider = MeterProvider(metric_readers=[reader])
-    set_meter_provider(meter_provider)
-    logger.info("OpenTelemetry prometheus exporter configured")
+    prometheus_reader = PrometheusMetricReader()
+    set_meter_provider(MeterProvider(metric_readers=[prometheus_reader]))
+    logger.info("OpenTelemetry prometheus metric provider configured")
 
 def instrument_api(app: FastAPI):
     FastAPIInstrumentor.instrument_app(app,
                                        excluded_urls="sdapi/v1/status,health/.*")
     metrics_app = make_asgi_app()
     app.mount("/metrics", metrics_app)
+    logger.info("Metrics endpoint mounted at /metrics")
     if app._is_instrumented_by_opentelemetry:
         logger.info("app is instrumented by opentelemetry")
