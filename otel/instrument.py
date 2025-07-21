@@ -35,16 +35,16 @@ def otel_setup():
         SERVICE_NAME: "sdnext"
     })
 
-    LoggingInstrumentor(
-        resource=resource,
-    ).instrument(set_logging_format=True)
-    logger.info("OpenTelemetry logging instrumented")
-
     tracerProvider = TracerProvider(resource=resource)
     tracerProvider.add_span_processor(
         BatchSpanProcessor(OTLPSpanExporter())
     )
     set_tracer_provider(tracerProvider)
+
+    LoggingInstrumentor(
+        resource=resource,
+    ).instrument(set_logging_format=True)
+    logger.info("OpenTelemetry logging instrumented")
     logger.info("OpenTelemetry tracer provider configured")
     logger.info("otel exporter endpoint: %s", environ.get(OTEL_EXPORTER_OTLP_ENDPOINT, DEFAULT_ENDPOINT))
 
@@ -61,6 +61,7 @@ def otel_setup():
     logger.info("OpenTelemetry prometheus metric provider configured")
 
 def instrument_api(app: FastAPI):
+    logger.info("Instrumenting FastAPI application")
     FastAPIInstrumentor.instrument_app(app,
                                        excluded_urls="sdapi/v1/status,health/.*")
     metrics_app = make_asgi_app()
