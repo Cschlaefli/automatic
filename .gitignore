@@ -21,6 +21,8 @@ cache
 **/.DS_Store
 tunableop_results*.csv
 
+*.pyi
+
 # all models and temp files
 *.log
 *.log.*
