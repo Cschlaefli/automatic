@@ -20,7 +20,7 @@ from opentelemetry.sdk.trace.export import (
 from opentelemetry.trace import get_tracer_provider, set_tracer_provider
 
 from opentelemetry.sdk.metrics import MeterProvider
-from opentelemetry.exporter.prometheus import PrometheusExporter
+from opentelemetry.exporter.prometheus import PrometheusMetricReader
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.metrics import set_meter_provider
 from prometheus_client import make_asgi_app
@@ -49,8 +49,7 @@ def otel_setup():
     ThreadingInstrumentor().instrument()
     logger.info("OpenTelemetry threading instrumented")
 
-
-    prometheus_exporter = PrometheusExporter()
+    prometheus_exporter = PrometheusMetricReader()
     reader = PeriodicExportingMetricReader(prometheus_exporter)
     meter_provider = MeterProvider(metric_readers=[reader])
     set_meter_provider(meter_provider)
