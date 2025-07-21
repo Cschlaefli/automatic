@@ -221,11 +221,11 @@ def setup_logging():
         safe_box=True,
         theme=theme,
     )
-    logging.basicConfig(level=logging.ERROR, format='%(asctime)s | %(name)s | %(levelname)s | %(module)s | %(message)s', handlers=[logging.NullHandler()]) # redirect default logger to null
+    # logging.basicConfig(level=logging.ERROR, format='%(asctime)s | %(name)s | %(levelname)s | %(module)s | %(message)s', handlers=[logging.NullHandler()]) # redirect default logger to null
     pretty_install(console=console)
     install_traceback()
-    while log.hasHandlers() and len(log.handlers) > 0:
-        log.removeHandler(log.handlers[0])
+    # while log.hasHandlers() and len(log.handlers) > 0:
+    #     log.removeHandler(log.handlers[0])
 
     log_filter = LogFilter()
     # handlers
@@ -236,19 +236,18 @@ def setup_logging():
     rh.setLevel(level)
     # log.addHandler(rh)
 
-    if not args.log_stdout:
-        fh = RotatingFileHandler(log_file, maxBytes=32*1024*1024, backupCount=9, encoding='utf-8', delay=True) # 10MB default for log rotation
-        if args.trace:
-            fh.formatter = logging.Formatter(f'%(asctime)s | {hostname} | %(name)s | %(levelname)s | %(module)s | | %(pathname)s:%(lineno)d | %(message)s')
-        else:
-            fh.formatter = logging.Formatter(f'%(asctime)s | {hostname} | %(name)s | %(levelname)s | %(module)s | %(message)s')
-        fh.addFilter(log_filter)
-        fh.setLevel(logging.DEBUG)
-        log.addHandler(fh)
-        global log_rolled # pylint: disable=global-statement
-        if not log_rolled and args.debug and not args.log:
-            fh.doRollover()
-            log_rolled = True
+    # fh = RotatingFileHandler(log_file, maxBytes=32*1024*1024, backupCount=9, encoding='utf-8', delay=True) # 10MB default for log rotation
+    # if args.trace:
+    #     fh.formatter = logging.Formatter(f'%(asctime)s | {hostname} | %(name)s | %(levelname)s | %(module)s | | %(pathname)s:%(lineno)d | %(message)s')
+    # else:
+    #     fh.formatter = logging.Formatter(f'%(asctime)s | {hostname} | %(name)s | %(levelname)s | %(module)s | %(message)s')
+    # fh.addFilter(log_filter)
+    # fh.setLevel(logging.DEBUG)
+    # log.addHandler(fh)
+    # global log_rolled # pylint: disable=global-statement
+    # if not log_rolled and args.debug and not args.log:
+    #     fh.doRollover()
+    #     log_rolled = True
 
     rb = RingBuffer(100) # 100 entries default in log ring buffer
     rb.addFilter(log_filter)
