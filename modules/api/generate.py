@@ -89,7 +89,7 @@ class APIGenerate():
 
     @tracer.start_as_current_span("post_text2img")
     def post_text2img(self, txt2imgreq: models.ReqTxt2Img):
-        shared.log.debug(f"Received request: {txt2imgreq}")
+        # shared.log.debug(f"Received request: {txt2imgreq}")
         self.prepare_face_module(txt2imgreq)
         script_runner = scripts_manager.scripts_txt2img
         if not script_runner.scripts:
@@ -134,7 +134,7 @@ class APIGenerate():
 
     @tracer.start_as_current_span("post_img2img")
     def post_img2img(self, img2imgreq: models.ReqImg2Img):
-        shared.log.debug(f"Received request: {img2imgreq}")
+        # shared.log.debug(f"Received request: {img2imgreq}")
         self.prepare_face_module(img2imgreq)
         init_images = img2imgreq.init_images
         if init_images is None:
