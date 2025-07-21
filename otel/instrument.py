@@ -18,9 +18,17 @@ from opentelemetry.sdk.trace.export import (
 )
 
 from opentelemetry.trace import get_tracer_provider, set_tracer_provider
+
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.exporter.prometheus import PrometheusExporter
+from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+from opentelemetry.metrics import set_meter_provider
+from prometheus_client import make_asgi_app
+
 from fastapi import FastAPI
 
 logger = logging.getLogger(__name__)
+
 
 def otel_setup():
     resource = Resource(attributes={
@@ -32,17 +40,26 @@ def otel_setup():
         BatchSpanProcessor(OTLPSpanExporter())
     )
     set_tracer_provider(tracerProvider)
-    logger.info("OpenTelemetry tracer provider setup")
+    logger.info("OpenTelemetry tracer provider configured")
     logger.info("otel exporter endpoint: %s", environ.get(OTEL_EXPORTER_OTLP_ENDPOINT, DEFAULT_ENDPOINT))
 
     LoggingInstrumentor().instrument(set_logging_format=True)
-    logger.info("OpenTelemetry logging instrumentor setup")
+    logger.info("OpenTelemetry logging instrumented")
 
     ThreadingInstrumentor().instrument()
+    logger.info("OpenTelemetry threading instrumented")
+
+
+    prometheus_exporter = PrometheusExporter()
+    reader = PeriodicExportingMetricReader(prometheus_exporter)
+    meter_provider = MeterProvider(metric_readers=[reader])
+    set_meter_provider(meter_provider)
+    logger.info("OpenTelemetry prometheus exporter configured")
 
 def instrument_api(app: FastAPI):
     FastAPIInstrumentor.instrument_app(app,
-                                       tracer_provider=get_tracer_provider(),
                                        excluded_urls="sdapi/v1/status,health/.*")
+    metrics_app = make_asgi_app()
+    app.mount("/metrics", metrics_app)
     if app._is_instrumented_by_opentelemetry:
         logger.info("app is instrumented by opentelemetry")
