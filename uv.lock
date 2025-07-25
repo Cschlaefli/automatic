@@ -306,6 +306,7 @@ dependencies = [
     { name = "torchsde" },
     { name = "torchvision" },
     { name = "tqdm" },
+    { name = "tqdm-loggable" },
     { name = "transformers" },
     { name = "typing-extensions" },
     { name = "urllib3" },
@@ -412,7 +413,8 @@ requires-dist = [
     { name = "torchsde", specifier = "==0.2.6" },
     { name = "torchvision", specifier = "==0.22.0+cu128", index = "https://download.pytorch.org/whl/cu128" },
     { name = "tqdm", specifier = ">=4.67.1", index = "https://pypi.org/simple" },
-    { name = "transformers", specifier = "==4.53.2" },
+    { name = "tqdm-loggable", specifier = ">=0.2" },
+    { name = "transformers", specifier = "==4.53.3" },
     { name = "typing-extensions", specifier = ">=4.14.1", index = "https://pypi.org/simple" },
     { name = "urllib3", specifier = ">=1.26.19" },
     { name = "voluptuous", specifier = ">=0.15.2" },
@@ -3376,7 +3378,7 @@ wheels = [
 
 [[package]]
 name = "tb-nightly"
-version = "2.21.0a20250720"
+version = "2.21.0a20250721"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "absl-py" },
@@ -3391,7 +3393,7 @@ dependencies = [
     { name = "werkzeug" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/46/03/4b21fce26f6a3037b371a707af3c43e7b4f4309e3c4c11592a1bd4502ef7/tb_nightly-2.21.0a20250720-py3-none-any.whl", hash = "sha256:5b13f936dc396d9c4e4de24e1a362c63f9a4d69cc29d6cea9b573a42eba88651", size = 5525813, upload-time = "2025-07-20T11:15:50.656Z" },
+    { url = "https://files.pythonhosted.org/packages/32/f3/d55883bc175e1707cb2046ae697192548032086f5dba145cdb630c5dc09b/tb_nightly-2.21.0a20250721-py3-none-any.whl", hash = "sha256:fbfdd773acbefd4e6aaff0a8ed7078a86892d1f82c379a1c9ce2adf10a7a9987", size = 5525811, upload-time = "2025-07-21T11:14:03.97Z" },
 ]
 
 [[package]]
@@ -3630,6 +3632,18 @@ wheels = [
 ]
 
 [[package]]
+name = "tqdm-loggable"
+version = "0.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "tqdm" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/65/96/d924c326727dbdcac6043065dba08b1455aaaca4f7ef1e79d4fea889b34d/tqdm_loggable-0.2.tar.gz", hash = "sha256:175abec3e1f63bbd2eac192fa5da075e80c7bb715d7ccf3cd1a29b7ab5af0617", size = 7442, upload-time = "2023-11-26T15:41:51.68Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/12/1f/1acb36a85797beba22934f124be6b51a7c18a4f408ce31443bec073181c7/tqdm_loggable-0.2-py3-none-any.whl", hash = "sha256:9703046302b93a667166487759e6f3f49597e86c89eb132ba1f31caa07bf0941", size = 9264, upload-time = "2023-11-26T15:41:49.917Z" },
+]
+
+[[package]]
 name = "trampoline"
 version = "0.1.2"
 source = { registry = "https://pypi.org/simple" }
@@ -3639,7 +3653,7 @@ wheels = [
 
 [[package]]
 name = "transformers"
-version = "4.53.2"
+version = "4.53.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "filelock" },
@@ -3653,9 +3667,9 @@ dependencies = [
     { name = "tokenizers" },
     { name = "tqdm" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/4c/67/80f51466ec447028fd84469b208eb742533ce06cc8fad2e3181380199e5c/transformers-4.53.2.tar.gz", hash = "sha256:6c3ed95edfb1cba71c4245758f1b4878c93bf8cde77d076307dacb2cbbd72be2", size = 9201233, upload-time = "2025-07-11T12:39:08.742Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f1/5c/49182918b58eaa0b4c954fd0e37c79fc299e5643e69d70089d0b0eb0cd9b/transformers-4.53.3.tar.gz", hash = "sha256:b2eda1a261de79b78b97f7888fe2005fc0c3fabf5dad33d52cc02983f9f675d8", size = 9197478, upload-time = "2025-07-22T07:30:51.51Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/96/88/beb33a79a382fcd2aed0be5222bdc47f41e4bfe7aaa90ae1374f1d8ea2af/transformers-4.53.2-py3-none-any.whl", hash = "sha256:db8f4819bb34f000029c73c3c557e7d06fc1b8e612ec142eecdae3947a9c78bf", size = 10826609, upload-time = "2025-07-11T12:39:05.461Z" },
+    { url = "https://files.pythonhosted.org/packages/41/b1/d7520cc5cb69c825599042eb3a7c986fa9baa8a8d2dea9acd78e152c81e2/transformers-4.53.3-py3-none-any.whl", hash = "sha256:5aba81c92095806b6baf12df35d756cf23b66c356975fb2a7fa9e536138d7c75", size = 10826382, upload-time = "2025-07-22T07:30:48.458Z" },
 ]
 
 [[package]]
@@ -3727,16 +3741,16 @@ wheels = [
 
 [[package]]
 name = "virtualenv"
-version = "20.31.2"
+version = "20.32.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "distlib" },
     { name = "filelock" },
     { name = "platformdirs" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/56/2c/444f465fb2c65f40c3a104fd0c495184c4f2336d65baf398e3c75d72ea94/virtualenv-20.31.2.tar.gz", hash = "sha256:e10c0a9d02835e592521be48b332b6caee6887f332c111aa79a09b9e79efc2af", size = 6076316, upload-time = "2025-05-08T17:58:23.811Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/a9/96/0834f30fa08dca3738614e6a9d42752b6420ee94e58971d702118f7cfd30/virtualenv-20.32.0.tar.gz", hash = "sha256:886bf75cadfdc964674e6e33eb74d787dff31ca314ceace03ca5810620f4ecf0", size = 6076970, upload-time = "2025-07-21T04:09:50.985Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f3/40/b1c265d4b2b62b58576588510fc4d1fe60a86319c8de99fd8e9fec617d2c/virtualenv-20.31.2-py3-none-any.whl", hash = "sha256:36efd0d9650ee985f0cad72065001e66d49a6f24eb44d98980f630686243cf11", size = 6057982, upload-time = "2025-05-08T17:58:21.15Z" },
+    { url = "https://files.pythonhosted.org/packages/5c/c6/f8f28009920a736d0df434b52e9feebfb4d702ba942f15338cb4a83eafc1/virtualenv-20.32.0-py3-none-any.whl", hash = "sha256:2c310aecb62e5aa1b06103ed7c2977b81e042695de2697d01017ff0f1034af56", size = 6057761, upload-time = "2025-07-21T04:09:48.059Z" },
 ]
 
 [[package]]
