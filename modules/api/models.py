@@ -3,6 +3,7 @@ from datetime import datetime
 from typing import Any, Optional, Dict, List, Union
 from pydantic import BaseModel, Field, create_model, ConfigDict # pylint: disable=no-name-in-module
 from inflection import underscore
+from modules.cmd_args import parser
 from modules.processing import StableDiffusionProcessingTxt2Img, StableDiffusionProcessingImg2Img
 import modules.shared as shared
 
@@ -408,7 +409,7 @@ for key, metadata in shared.opts.data_labels.items():
 OptionsModel = create_model("Options", **fields)
 
 flags = {}
-_options = vars(shared.parser)['_option_string_actions']
+_options = vars(parser)['_option_string_actions']
 for key in _options:
     if _options[key].dest != 'help':
         flag = _options[key]
@@ -437,57 +438,3 @@ class ResGPU(BaseModel): # definition of http response
     name: str = Field(title="GPU Name")
     data: dict = Field(title="Name/Value data")
     chart: list[float, float] = Field(title="Exactly two items to place on chart")
-
-# helper function
-
-def create_model_from_signature(func: Callable, model_name: str, base_model: Type[BaseModel] = BaseModel, additional_fields: List = [], exclude_fields: List[str] = []):
-    from PIL import Image
-
-    class Config:
-        extra = 'allow'
-
-    args, _, varkw, defaults, kwonlyargs, kwonlydefaults, annotations = inspect.getfullargspec(func)
-    config = Config if varkw else None # Allow extra params if there is a **kwargs parameter in the function signature
-    defaults = defaults or []
-    args = args or []
-    for arg in exclude_fields:
-        if arg in args:
-            args.remove(arg)
-    non_default_args = len(args) - len(defaults)
-    defaults = (...,) * non_default_args + defaults
-    keyword_only_params = {param: kwonlydefaults.get(param, Any) for param in kwonlyargs}
-    for k, v in annotations.items():
-        if v == List[Image.Image]:
-            annotations[k] = List[str]
-        elif v == Image.Image:
-            annotations[k] = str
-        elif str(v) == 'typing.List[modules.control.unit.Unit]':
-            annotations[k] = List[str]
-    model_fields = {param: (annotations.get(param, Any), default) for param, default in zip(args, defaults)}
-
-    for fld in additional_fields:
-        model_def = ModelDef(
-            field=underscore(fld["key"]),
-            field_alias=fld["key"],
-            field_type=fld["type"],
-            field_value=fld["default"],
-            field_exclude=fld["exclude"] if "exclude" in fld else False)
-        model_fields[model_def.field] = (model_def.field_type, Field(default=model_def.field_value, alias=model_def.field_alias, exclude=model_def.field_exclude))
-
-    for fld in exclude_fields:
-        if fld in model_fields:
-            del model_fields[fld]
-
-    model = create_model(
-        model_name,
-        **model_fields,
-        **keyword_only_params,
-        __base__=base_model,
-        __config__=config,
-    )
-    try:
-        model.__config__.allow_population_by_field_name = True
-        model.__config__.allow_mutation = True
-    except Exception:
-        pass
-    return model

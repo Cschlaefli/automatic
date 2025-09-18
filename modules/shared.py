@@ -34,7 +34,6 @@ demo: gr.Blocks = None
 api = None
 url = 'https://github.com/vladmandic/sdnext'
 cmd_opts = cmd_args.parse_args()
-parser = cmd_args.parser
 hide_dirs = {"visible": not cmd_opts.hide_ui_dir_config}
 listfiles = listdir
 xformers_available = False
@@ -72,6 +71,10 @@ state = shared_state.State()
 backend = Backend.DIFFUSERS
 if not hasattr(cmd_opts, "use_openvino"):
     cmd_opts.use_openvino = False
+if not hasattr(cmd_opts, "use_ipex"):
+    cmd_opts.use_ipex = False
+if not hasattr(cmd_opts, "use_directml"):
+    cmd_opts.use_directml = False
 if cmd_opts.use_openvino: # override for openvino
     from modules.intel.openvino import get_device_list as get_openvino_device_list # pylint: disable=ungrouped-imports
 elif cmd_opts.use_ipex or devices.has_xpu():
@@ -84,6 +87,9 @@ elif cmd_opts.use_directml:
     ok, e = directml_init()
     if not ok:
         log.error(f'DirectML initialization failed: {e}')
+
+if not hasattr(cmd_opts, "device_id"):
+    cmd_opts.device_id = None
 devices.backend = devices.get_backend(cmd_opts)
 devices.device = devices.get_optimal_device()
 mem_stat = memory_stats()
