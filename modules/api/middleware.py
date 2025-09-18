@@ -39,7 +39,7 @@ def setup_middleware(app: FastAPI, cmd_opts):
         app.add_middleware(CORSMiddleware, allow_origins=cmd_opts.cors_origins.split(','), allow_methods=['*'], allow_credentials=True, allow_headers=['*'])
     elif cmd_opts.cors_regex:
         app.add_middleware(CORSMiddleware, allow_origin_regex=cmd_opts.cors_regex, allow_methods=['*'], allow_credentials=True, allow_headers=['*'])
-    
+
 
     #@app.middleware("http")
     #async def log_and_time(req: Request, call_next):
@@ -51,7 +51,7 @@ def setup_middleware(app: FastAPI, cmd_opts):
     #        endpoint = req.scope.get('path', 'err')
     #        token = req.cookies.get("access-token") or req.cookies.get("access-token-unsecure")
     #        if (cmd_opts.api_log) and endpoint.startswith('/sdapi'):
-    #            if any([endpoint.startswith(x) for x in ignore_endpoints]): # noqa C419 # pylint: disable=use-a-generator
+    #            if any([endpoint.startswith(x) for x in ignore_endpoints]):
     #                return res
     #            log.info('API user={user} code={code} {prot}/{ver} {method} {endpoint} {cli} {duration}'.format( # pylint: disable=consider-using-f-string, logging-format-interpolation
     #                user = app.tokens.get(token) if hasattr(app, 'tokens') else None,

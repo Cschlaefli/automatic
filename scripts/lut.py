@@ -14,7 +14,7 @@ class Script(scripts_manager.Script):
 
     def show(self, is_img2img): # pylint: disable=unused-argument
         return True
-    
+
     def default_args(self, is_img2img): # pylint: disable=unused-argument
         return [True, None, 1.0, 0, 0, 0, 0, 0, 0, 0, 0, 1.0]
 

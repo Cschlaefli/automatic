@@ -33,7 +33,7 @@ class Script(scripts_manager.Script):
 
     def show(self, is_img2img):
         return True
-    
+
     def default_args(self, is_img2img):
         return [
             True,

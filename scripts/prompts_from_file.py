@@ -96,7 +96,7 @@ def load_prompt_file(file):
 class Script(scripts_manager.Script):
     def title(self):
         return "Prompts from file"
-    
+
     def default_args(self, is_img2img):
         return [False, False, '']
 

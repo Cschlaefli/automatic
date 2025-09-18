@@ -32,7 +32,7 @@ class Script(scripts_manager.Script):
 
     def title(self):
         return "XYZ Grid"
-    
+
     def default_args(self, is_img2img):
         return [
             False,  # enabled

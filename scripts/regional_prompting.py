@@ -30,7 +30,7 @@ class Script(scripts_manager.Script):
 
     def change(self, mode):
         return [gr.update(visible='Col' in mode or 'Row' in mode), gr.update(visible='Prompt' in mode)]
-    
+
     def default_args(self, is_img2img):
         return ['None', '', 1.0, '']
 

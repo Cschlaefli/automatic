@@ -14,7 +14,7 @@ class Script(scripts_manager.Script):
 
     def show(self, is_img2img):
         return True
-    
+
     def default_args(self, is_img2img):
         return [0.65, True, False, 1.0, 1.0, 1.0]
 

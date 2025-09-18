@@ -8,7 +8,7 @@ class Script(scripts_manager.Script):
 
     def show(self, is_img2img):
         return is_img2img
-    
+
     def default_args(self, is_img2img):
         return ['', '', 0.5]
 

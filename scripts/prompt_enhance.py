@@ -434,7 +434,7 @@ class Script(scripts_manager.Script):
         model_type = self.options.models.get(name, {}).get('type', None)
         model_file = self.options.models.get(name, {}).get('file', None)
         return [model_repo, model_gguf, model_type, model_file]
-    
+
     def default_args(self, is_img2img):
         return [
             False,  # apply_prompt

@@ -47,7 +47,7 @@ class Script(scripts_manager.Script):
             '0.6, 0.4, 1.1, 1.2',  # freeu preset
             '10, 20, 0.8',  # alpha preset
             False,  # injection
-        ]    
+        ]
 
     def ui(self, _is_img2img): # ui elements
         with gr.Row():
