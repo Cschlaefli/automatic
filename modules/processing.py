@@ -224,17 +224,13 @@ def process_images(p: StableDiffusionProcessing) -> Processed:
                 results = process_images_inner(p)
                 errors.profile_torch(shared.profiler, 'Process')
         else:
-            with context_hypertile_vae(p), context_hypertile_unet(p), tracer.start_as_current_span("process_images_inner"):
-                processed = process_images_inner(p)
+            with context_hypertile_vae(p), context_hypertile_unet(p):
+                results = process_images_inner(p)
     except Exception as e:
         span.set_status(Status(StatusCode.ERROR))
         span.record_exception(e)
     finally:
         span.add_event('post_process')
-        pag.unapply()
-        cfgzero.unapply()
-        if shared.opts.cuda_compile_backend == 'none':
-            token_merge.remove_token_merging(p.sd_model)
         script_callbacks.after_process_callback(p)
 
         if p.override_settings_restore_afterwards: # restore opts to original state
@@ -386,7 +382,7 @@ def process_samples(p: StableDiffusionProcessing, samples):
         out_images.append(image)
     return out_images, out_infotexts
 
-
+@tracer.start_as_current_span("process_images_inner")
 def process_images_inner(p: StableDiffusionProcessing) -> Processed:
     if type(p.prompt) == list:
         assert len(p.prompt) > 0
