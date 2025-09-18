@@ -51,6 +51,7 @@ try:
     from modules.schedulers.scheduler_bdia import BDIA_DDIMScheduler # pylint: disable=ungrouped-imports
     from modules.schedulers.scheduler_ufogen import UFOGenScheduler # pylint: disable=ungrouped-imports
     from modules.schedulers.scheduler_unipc_flowmatch import FlowUniPCMultistepScheduler # pylint: disable=ungrouped-imports
+    from modules.schedulers.scheduler_flashflow import FlashFlowMatchEulerDiscreteScheduler # pylint: disable=ungrouped-imports
     from modules.perflow import PeRFlowScheduler # pylint: disable=ungrouped-imports
 except Exception as e:
     shared.log.error(f'Sampler import: version={diffusers.__version__} error: {e}')
@@ -104,6 +105,7 @@ config = {
     'VDM Solver': { 'clip_sample_range': 2.0, },
     'TCD': { 'set_alpha_to_one': True, 'rescale_betas_zero_snr': False, 'beta_schedule': 'scaled_linear' },
     'TDD': { },
+    'Flash FlowMatch': { 'shift': 1, 'use_dynamic_shifting': False, 'use_karras_sigmas': False, 'use_exponential_sigmas': False, 'use_beta_sigmas': False },
     'PeRFlow': { 'prediction_type': 'ddim_eps' },
     'UFOGen': { },
     'BDIA DDIM': { 'clip_sample': False, 'set_alpha_to_one': True, 'steps_offset': 0, 'clip_sample_range': 1.0, 'sample_max_value': 1.0, 'timestep_spacing': 'leading', 'rescale_betas_zero_snr': False, 'thresholding': False, 'gamma': 1.0 },
@@ -153,6 +155,7 @@ samplers_data_diffusers = [
 
     SamplerData('Heun', lambda model: DiffusionSampler('Heun', HeunDiscreteScheduler, model), [], {}),
     SamplerData('Heun FlowMatch', lambda model: DiffusionSampler('Heun FlowMatch', FlowMatchHeunDiscreteScheduler, model), [], {}),
+    SamplerData('Flash FlowMatch', lambda model: DiffusionSampler('Flash FlowMatch', FlashFlowMatchEulerDiscreteScheduler, model), [], {}),
 
     SamplerData('DEIS', lambda model: DiffusionSampler('DEIS', DEISMultistepScheduler, model), [], {}),
     SamplerData('SA Solver', lambda model: DiffusionSampler('SA Solver', SASolverScheduler, model), [], {}),
@@ -288,7 +291,6 @@ class DiffusionSampler:
         possible = signature.parameters.keys()
         for key in self.config.copy().keys():
             if key not in possible:
-                # shared.log.warning(f'Sampler: sampler="{name}" config={self.config} invalid={key}')
                 del self.config[key]
         debug_log(f'Sampler: name="{name}"')
         debug_log(f'Sampler: config={self.config}')
@@ -298,7 +300,7 @@ class DiffusionSampler:
         try:
             sampler = constructor(**self.config)
         except Exception as e:
-            shared.log.error(f'Sampler: sampler="{name}" {e}')
+            shared.log.error(f'Sampler: "{name}" {e}')
             if debug:
                 errors.display(e, 'Samplers')
             self.sampler = None
@@ -308,15 +310,21 @@ class DiffusionSampler:
             accept_sigmas = "sigmas" in set(inspect.signature(sampler.set_timesteps).parameters.keys())
             accepts_timesteps = "timesteps" in set(inspect.signature(sampler.set_timesteps).parameters.keys())
             accept_scale_noise = hasattr(sampler, "scale_noise")
-            debug_log(f'Sampler: sampler="{name}" sigmas={accept_sigmas} timesteps={accepts_timesteps}')
+            debug_log(f'Sampler: "{name}" sigmas={accept_sigmas} timesteps={accepts_timesteps}')
             if ('Flux' in model.__class__.__name__) and (not accept_sigmas):
-                shared.log.warning(f'Sampler: sampler="{name}" does not accept sigmas')
+                shared.log.warning(f'Sampler: "{name}" does not accept sigmas')
                 self.sampler = None
                 return
             if ('StableDiffusion3' in model.__class__.__name__) and (not accept_scale_noise):
-                shared.log.warning(f'Sampler: sampler="{name}" does not implement scale noise')
+                shared.log.warning(f'Sampler: "{name}" does not implement scale noise')
                 self.sampler = None
                 return
+
+        # monkey-patch to allow sdxl pipeline to execute flowmatch samplers
+        if not hasattr(sampler, 'scale_model_input'):
+            sampler.scale_model_input = lambda x, _y: x
+        if not hasattr(sampler, 'init_noise_sigma'):
+            sampler.init_noise_sigma = 1.0
 
         self.sampler = sampler
 

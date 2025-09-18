@@ -73,17 +73,17 @@ class PromptEmbedder:
         earlyout = self.checkcache(p)
         if earlyout:
             return
-        pipe = prepare_model(p.sd_model)
-        if pipe is None:
+        self.pipe = prepare_model(p.sd_model)
+        if self.pipe is None:
             shared.log.error("Prompt encode: cannot find text encoder in model")
             return
         # per prompt in batch
         for batchidx, (prompt, negative_prompt) in enumerate(zip(self.prompts, self.negative_prompts)):
             self.prepare_schedule(prompt, negative_prompt)
             if self.scheduled_prompt:
-                self.scheduled_encode(pipe, batchidx)
+                self.scheduled_encode(self.pipe, batchidx)
             else:
-                self.encode(pipe, prompt, negative_prompt, batchidx)
+                self.encode(self.pipe, prompt, negative_prompt, batchidx)
         self.checkcache(p)
         debug(f"Prompt encode: time={(time.time() - t0):.3f}")
 
@@ -182,6 +182,10 @@ class PromptEmbedder:
             self.negative_prompt_attention_masks[batchidx].append(self.negative_prompt_attention_masks[batchidx][idx])
 
     def encode(self, pipe, positive_prompt, negative_prompt, batchidx):
+        if positive_prompt is None:
+            positive_prompt = ''
+        if negative_prompt is None:
+            negative_prompt = ''
         global last_attention # pylint: disable=global-statement
         self.attention = shared.opts.prompt_attention
         last_attention = self.attention
@@ -223,6 +227,8 @@ class PromptEmbedder:
         batch = getattr(self, key)
         res = []
         try:
+            if len(batch) == 0 or len(batch[0]) == 0:
+                return None # flux has no negative prompts
             if isinstance(batch[0][0], list) and len(batch[0][0]) == 2 and isinstance(batch[0][0][1], torch.Tensor) and batch[0][0][1].shape[0] == 32:
                 # hidream uses a list of t5 + llama prompt embeds: [t5_embeds, llama_embeds]
                 # t5_embeds shape: [batch_size, seq_len, dim]
@@ -248,9 +254,11 @@ class PromptEmbedder:
                         res.append(batch[i][step])
                     except IndexError:
                         res.append(batch[i][0])  # if not scheduled, return default
+                if any(res[0].shape[1] != r.shape[1] for r in res):
+                    res = pad_to_same_length(self.pipe, res)
                 return torch.cat(res)
-        except Exception:
-            pass
+        except Exception as e:
+            shared.log.error(f"Prompt encode: {e}")
         return None
 
 
@@ -356,6 +364,8 @@ def get_prompt_schedule(prompt, steps):
 def get_tokens(pipe, msg, prompt):
     global token_dict, token_type # pylint: disable=global-statement
     if shared.sd_loaded and hasattr(pipe, 'tokenizer') and pipe.tokenizer is not None:
+        prompt = prompt.replace(' BOS ', ' !!!!!!!! ').replace(' EOS ', ' !!!!!!! ')
+        debug(f'Prompt tokenizer: type={msg} prompt="{prompt}"')
         if token_dict is None or token_type != shared.sd_model_type:
             token_type = shared.sd_model_type
             fn = pipe.tokenizer.name_or_path
@@ -371,6 +381,12 @@ def get_tokens(pipe, msg, prompt):
         has_eos_token = pipe.tokenizer.eos_token_id is not None
         ids = pipe.tokenizer(prompt)
         ids = getattr(ids, 'input_ids', [])
+        if has_bos_token and has_eos_token:
+            for i in range(len(ids)):
+                if ids[i] == 21622:
+                    ids[i] = pipe.tokenizer.bos_token_id
+                elif ids[i] == 15203:
+                    ids[i] = pipe.tokenizer.eos_token_id
         tokens = []
         for i in ids:
             try:
@@ -379,7 +395,7 @@ def get_tokens(pipe, msg, prompt):
             except Exception:
                 tokens.append(f'UNK_{i}')
         token_count = len(ids) - int(has_bos_token) - int(has_eos_token)
-        debug(f'Prompt tokenizer: type={msg} tokens={token_count} {tokens}')
+        debug(f'Prompt tokenizer: type={msg} tokens={token_count} tokens={tokens} ids={ids}')
     return token_count
 
 
@@ -425,7 +441,7 @@ def get_prompts_with_weights(pipe, prompt: str):
                 sections += 1
         if all_tokens > 0:
             avg_weight = avg_weight / all_tokens
-            shared.log.debug(f'Prompt tokenizer: parser={shared.opts.prompt_attention} len={len(prompt)} sections={sections} tokens={all_tokens} weights={min_weight:.2f}/{avg_weight:.2f}/{max_weight:.2f}')
+            debug(f'Prompt tokenizer: parser={shared.opts.prompt_attention} len={len(prompt)} sections={sections} tokens={all_tokens} weights={min_weight:.2f}/{avg_weight:.2f}/{max_weight:.2f}')
     except Exception:
         pass
     debug(f'Prompt: weights={texts_and_weights} time={(time.time() - t0):.3f}')
@@ -472,7 +488,7 @@ def prepare_embedding_providers(pipe, clip_skip) -> list[EmbeddingsProvider]:
 
 
 def pad_to_same_length(pipe, embeds, empty_embedding_providers=None):
-    if not hasattr(pipe, 'encode_prompt') and 'StableCascade' not in pipe.__class__.__name__:
+    if not hasattr(pipe, 'encode_prompt') and ('StableCascade' not in pipe.__class__.__name__):
         return embeds
     device = devices.device
     if shared.opts.diffusers_zeros_prompt_pad or 'StableDiffusion3' in pipe.__class__.__name__:
@@ -531,6 +547,10 @@ def split_prompts(pipe, prompt, SD3 = False):
 
 def get_weighted_text_embeddings(pipe, prompt: str = "", neg_prompt: str = "", clip_skip: int = None):
     device = devices.device
+    if prompt is None:
+        prompt = ''
+    if neg_prompt is None:
+        neg_prompt = ''
     SD3 = bool(hasattr(pipe, 'text_encoder_3') and not hasattr(pipe, 'text_encoder_4'))
     prompt, prompt_2, prompt_3, prompt_4 = split_prompts(pipe, prompt, SD3)
     neg_prompt, neg_prompt_2, neg_prompt_3, neg_prompt_4 = split_prompts(pipe, neg_prompt, SD3)

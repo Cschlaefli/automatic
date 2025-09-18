@@ -1,7 +1,7 @@
 import os
 import json
 import concurrent
-from modules import shared, ui_extra_networks
+from modules import shared, ui_extra_networks, modelstats
 from modules.lora import lora_load
 
 
@@ -17,7 +17,7 @@ class ExtraNetworksPageLora(ui_extra_networks.ExtraNetworksPage):
         lora_load.list_available_networks()
 
     @staticmethod
-    def get_tags(l, info):
+    def get_tags(l, info, version):
         tags = {}
         try:
             if l.metadata is not None:
@@ -37,26 +37,13 @@ class ExtraNetworksPageLora(ui_extra_networks.ExtraNetworksPage):
                     tag = ' '.join(words[1:]).lower()
                     tags[tag] = words[0]
 
-            def find_version():
-                found_versions = []
-                current_hash = l.hash[:8].upper()
-                all_versions = info.get('modelVersions', [])
-                for v in info.get('modelVersions', []):
-                    for f in v.get('files', []):
-                        if any(h.startswith(current_hash) for h in f.get('hashes', {}).values()):
-                            found_versions.append(v)
-                if len(found_versions) == 0:
-                    found_versions = all_versions
-                return found_versions
-
-            for v in find_version():  # trigger words from info json
-                possible_tags = v.get('trainedWords', [])
-                if isinstance(possible_tags, list):
-                    for tag_str in possible_tags:
-                        for tag in tag_str.split(','):
-                            tag = tag.strip().lower()
-                            if tag not in tags:
-                                tags[tag] = 0
+            possible_tags = version.get('trainedWords', [])
+            if isinstance(possible_tags, list):
+                for tag_str in possible_tags:
+                    for tag in tag_str.split(','):
+                        tag = tag.strip().lower()
+                        if tag not in tags:
+                            tags[tag] = 0
 
             possible_tags = info.get('tags', []) # tags from info json
             if not isinstance(possible_tags, list):
@@ -85,21 +72,24 @@ class ExtraNetworksPageLora(ui_extra_networks.ExtraNetworksPage):
         try:
             # path, _ext = os.path.splitext(l.filename)
             name = os.path.splitext(os.path.relpath(l.filename, shared.cmd_opts.lora_dir))[0]
+            size, mtime = modelstats.stat(l.filename)
+            info = self.find_info(l.filename)
+            version = self.find_version(l, info)
             item = {
                 "type": 'Lora',
                 "name": name,
+                "alias": os.path.splitext(os.path.basename(l.filename))[0],
                 "filename": l.filename,
                 "hash": l.shorthash,
                 "prompt": json.dumps(f" <lora:{l.get_alias()}:{shared.opts.extra_networks_default_multiplier}>"),
                 "metadata": json.dumps(l.metadata, indent=4) if l.metadata else None,
-                "mtime": os.path.getmtime(l.filename),
-                "size": os.path.getsize(l.filename),
-                "version": l.sd_version,
+                "mtime": mtime,
+                "size": size,
+                "version": version.get("baseModel", l.sd_version) if info else l.sd_version,
+                "info": info,
+                "description": self.find_description(l.filename, info),
+                "tags": self.get_tags(l, info, version),
             }
-            info = self.find_info(l.filename)
-            item["info"] = info
-            item["description"] = self.find_description(l.filename, info) # use existing info instead of double-read
-            item["tags"] = self.get_tags(l, info)
             return item
         except Exception as e:
             shared.log.error(f'Networks: type=lora file="{name}" {e}')

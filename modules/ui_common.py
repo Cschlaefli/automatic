@@ -5,7 +5,7 @@ import shutil
 import platform
 import subprocess
 import gradio as gr
-from modules import call_queue, shared, ui_sections, ui_symbols, ui_components, generation_parameters_copypaste, images, scripts_manager, script_callbacks, infotext
+from modules import call_queue, shared, errors, ui_sections, ui_symbols, ui_components, generation_parameters_copypaste, images, scripts_manager, script_callbacks, infotext
 
 
 folder_symbol = ui_symbols.folder
@@ -19,10 +19,14 @@ def gr_show(visible=True):
 
 def update_generation_info(generation_info, html_info, img_index):
     try:
-        generation_info = json.loads(generation_info)
-        if img_index < 0 or img_index >= len(generation_info["infotexts"]):
-            return html_info, generation_info
-        info = generation_info["infotexts"][img_index]
+        generation_json = json.loads(generation_info)
+        if len(generation_json["infotexts"]) == 0:
+            return html_info, 'no infotexts found'
+        if img_index == -1:
+            img_index = 0
+        if img_index >= len(generation_json["infotexts"]):
+            return html_info, 'error fetching infotext'
+        info = generation_json["infotexts"][img_index]
         html_info_formatted = infotext_to_html(info)
         return html_info, html_info_formatted
     except Exception:
@@ -30,8 +34,8 @@ def update_generation_info(generation_info, html_info, img_index):
     return html_info, html_info
 
 
-def plaintext_to_html(text):
-    res = '<p class="plaintext">' + "<br>\n".join([f"{html.escape(x)}" for x in text.split('\n')]) + '</p>'
+def plaintext_to_html(text, elem_classes=[]):
+    res = f'<p class="plaintext {" ".join(elem_classes)}">' + '<br>\n'.join([f"{html.escape(x)}" for x in text.split('\n')]) + '</p>'
     return res
 
 
@@ -64,24 +68,31 @@ def delete_files(js_data, files, all_files, index):
         start_index = index
     deleted = []
     all_files = [f.split('/file=')[1] if 'file=' in f else f for f in all_files] if isinstance(all_files, list) else []
+    all_files = [os.path.normpath(f) for f in all_files]
+    reference_dir = os.path.join('models', 'Reference')
     for _image_index, filedata in enumerate(files, start_index):
         try:
-            fn = filedata['name']
-            if os.path.isfile(fn):
+            fn = os.path.normpath(filedata['name'])
+            if reference_dir in fn:
+                shared.log.warning(f'Delete: file="{fn}" not allowed')
+                continue
+            if os.path.exists(fn) and os.path.isfile(fn):
                 deleted.append(fn)
                 os.remove(fn)
                 if fn in all_files:
                     all_files.remove(fn)
-                shared.log.info(f'Delete: image="{fn}"')
+                    shared.log.info(f'Delete: image="{fn}"')
+                else:
+                    shared.log.warning(f'Delete: image="{fn}" ui mismatch')
             base, _ext = os.path.splitext(fn)
             desc = f'{base}.txt'
-            if os.path.exists(desc):
+            if os.path.exists(desc) and os.path.isfile(desc):
                 os.remove(desc)
                 shared.log.info(f'Delete: text="{fn}"')
         except Exception as e:
-            shared.log.error(f'Delete: image="{fn}" {e}')
+            shared.log.error(f'Delete: file="{fn}" {e}')
     deleted = ', '.join(deleted) if len(deleted) > 0 else 'none'
-    return all_files, plaintext_to_html(f"Deleted: {deleted}")
+    return all_files, plaintext_to_html(f"Deleted: {deleted}", ['performance'])
 
 
 def save_files(js_data, files, html_info, index):
@@ -136,7 +147,6 @@ def save_files(js_data, files, html_info, index):
             p.infotexts.append(p.infotext)
         if 'name' in filedata and ('tmp' not in filedata['name']) and os.path.isfile(filedata['name']):
             fullfn = filedata['name']
-            filenames.append(os.path.basename(fullfn))
             fullfns.append(fullfn)
             destination = shared.opts.outdir_save
             namegen = images.FilenameGenerator(p, seed=p.all_seeds[i], prompt=p.all_prompts[i], image=None)  # pylint: disable=no-member
@@ -145,6 +155,8 @@ def save_files(js_data, files, html_info, index):
             destination = namegen.sanitize(destination)
             os.makedirs(destination, exist_ok = True)
             tgt_filename = os.path.join(destination, os.path.basename(fullfn))
+            relfn = os.path.relpath(tgt_filename, shared.opts.outdir_save)
+            filenames.append(relfn)
             if not os.path.exists(tgt_filename):
                 try:
                     shutil.copy(fullfn, destination)
@@ -173,7 +185,14 @@ def save_files(js_data, files, html_info, index):
                 geninfo, _ = images.read_info_from_image(image)
                 items = infotext.parse(geninfo)
                 p = PObject(items)
-            fullfn, txt_fullfn, _exif = images.save_image(image, shared.opts.outdir_save, "", seed=p.all_seeds[i], prompt=p.all_prompts[i], info=info, extension=shared.opts.samples_format, grid=is_grid, p=p)
+            try:
+                seed = p.all_seeds[i] if i < len(p.all_seeds) else p.seed
+                prompt = p.all_prompts[i] if i < len(p.all_prompts) else p.prompt
+                fullfn, txt_fullfn, _exif = images.save_image(image, shared.opts.outdir_save, "", seed=seed, prompt=prompt, info=info, extension=shared.opts.samples_format, grid=is_grid, p=p)
+            except Exception as e:
+                fullfn, txt_fullfn = None, None
+                shared.log.error(f'Save: image={image} i={i} seeds={p.all_seeds} prompts={p.all_prompts}')
+                errors.display(e, 'save')
             if fullfn is None:
                 continue
             filename = os.path.relpath(fullfn, shared.opts.outdir_save)
@@ -192,7 +211,7 @@ def save_files(js_data, files, html_info, index):
                     with open(fullfns[i], mode="rb") as f:
                         zip_file.writestr(filenames[i], f.read())
         fullfns.insert(0, zip_filepath)
-    return gr.File.update(value=fullfns, visible=True), plaintext_to_html(f"Saved: {filenames[0] if len(filenames) > 0 else 'none'}")
+    return gr.File.update(value=fullfns, visible=True), plaintext_to_html(f"Saved: {filenames[0] if len(filenames) > 0 else 'none'}", ['performance'])
 
 
 def open_folder(result_gallery, gallery_index = 0):
@@ -238,7 +257,9 @@ def create_output_panel(tabname, preview=True, prompt=None, height=None, transfe
                                         elem_classes=["gallery_main"],
                                        )
             if prompt is not None:
-                ui_sections.create_interrogate_button(tab=tabname, inputs=result_gallery, outputs=prompt)
+                ui_sections.create_interrogate_button(tab=tabname, inputs=result_gallery, outputs=prompt, what='output')
+            button_image_fit = gr.Button(ui_symbols.resize, elem_id=f"{tabname}_image_fit", elem_classes=['image-fit'])
+            button_image_fit.click(fn=None, _js="cycleImageFit", inputs=[], outputs=[])
 
         with gr.Column(elem_id=f"{tabname}_footer", elem_classes="gallery_footer"):
             dummy_component = gr.Label(visible=False)
@@ -319,7 +340,7 @@ def create_refresh_button(refresh_component, refresh_method, refreshed_args = No
         return gr.update(**args)
 
     refresh_button = ui_components.ToolButton(value=ui_symbols.refresh, elem_id=elem_id, visible=visible)
-    refresh_button.click(fn=refresh, inputs=[], outputs=[refresh_component])
+    refresh_button.click(fn=refresh, inputs=[], outputs=[refresh_component], show_progress=False)
     return refresh_button
 
 
@@ -330,7 +351,26 @@ def create_override_inputs(tab): # pylint: disable=unused-argument
     return override_settings
 
 
-def connect_reuse_seed(seed: gr.Number, reuse_seed: gr.Button, generation_info: gr.Textbox, is_subseed, subseed_strength=None):
+def reuse_seed(seed_component: gr.Number, reuse_button: gr.Button, subseed:bool=False):
+    def reuse_click(selected_gallery_index):
+        selected_gallery_index = int(selected_gallery_index)
+        from modules import processing
+        if processing.processed is None:
+            seed = -1
+        elif selected_gallery_index >= len(processing.processed.all_seeds):
+            selected_gallery_index -= len(processing.processed.images) - len(processing.processed.all_seeds) # if we have more images than seeds it is likely the grid image
+            seed = processing.processed.all_seeds[selected_gallery_index] if not subseed else processing.processed.all_subseeds[selected_gallery_index]
+        elif len(processing.processed.all_seeds) > 0:
+            seed = processing.processed.all_seeds[0] if not subseed else processing.processed.all_subseeds[0]
+        else:
+            seed = -1
+        shared.log.debug(f'Reuse seed: index={selected_gallery_index} seed={seed} subseed={subseed}')
+        return seed
+
+    reuse_button.click(fn=reuse_click, _js="selected_gallery_index", inputs=[seed_component], outputs=[seed_component], show_progress=False)
+
+
+def connect_reuse_seed(seed: gr.Number, reuse_seed_btn: gr.Button, generation_info: gr.Textbox, is_subseed, subseed_strength=None):
     """ Connects a 'reuse (sub)seed' button's click event so that it copies last used
         (sub)seed value from generation info the to the seed field. If copying subseed and subseed strength
         was 0, i.e. no variation seed was used, it copies the normal seed value instead."""
@@ -358,9 +398,9 @@ def connect_reuse_seed(seed: gr.Number, reuse_seed: gr.Button, generation_info: 
             return [restore_seed, gr_show(False)]
     dummy_component = gr.Number(visible=False, value=0)
     if subseed_strength is None:
-        reuse_seed.click(fn=copy_seed, _js="(x, y) => [x, selected_gallery_index()]", show_progress=False, inputs=[generation_info, dummy_component], outputs=[seed, dummy_component])
+        reuse_seed_btn.click(fn=copy_seed, _js="(x, y) => [x, selected_gallery_index()]", show_progress=False, inputs=[generation_info, dummy_component], outputs=[seed, dummy_component])
     else:
-        reuse_seed.click(fn=copy_seed, _js="(x, y) => [x, selected_gallery_index()]", show_progress=False, inputs=[generation_info, dummy_component], outputs=[seed, dummy_component, subseed_strength])
+        reuse_seed_btn.click(fn=copy_seed, _js="(x, y) => [x, selected_gallery_index()]", show_progress=False, inputs=[generation_info, dummy_component], outputs=[seed, dummy_component, subseed_strength])
 
 
 def update_token_counter(text):

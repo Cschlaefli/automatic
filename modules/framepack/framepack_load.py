@@ -61,7 +61,7 @@ def reset_model():
 
 
 def load_model(variant:str=None, pipeline:str=None, text_encoder:str=None, text_encoder_2:str=None, feature_extractor:str=None, image_encoder:str=None, transformer:str=None):
-    shared.state.begin('Load')
+    shared.state.begin('Load FramePack')
     if variant is not None:
         if variant not in models.keys():
             raise ValueError(f'FramePack: variant="{variant}" invalid')
@@ -183,7 +183,7 @@ def load_model(variant:str=None, pipeline:str=None, text_encoder:str=None, text_
         diffusers.loaders.peft._SET_ADAPTER_SCALE_FN_MAPPING['HunyuanVideoTransformer3DModelPacked'] = lambda model_cls, weights: weights # pylint: disable=protected-access
         shared.log.info(f'FramePack load: model={shared.sd_model.__class__.__name__} variant="{variant}" type={shared.sd_model_type} time={t1-t0:.2f}')
         sd_models.apply_balanced_offload(shared.sd_model)
-        devices.torch_gc(force=True)
+        devices.torch_gc(force=True, reason='load')
 
     except Exception as e:
         shared.log.error(f'FramePack load: {e}')

@@ -6,7 +6,7 @@ from typing import Any, Dict, List
 from dataclasses import dataclass, field
 import numpy as np
 from PIL import Image, ImageOps
-from modules import shared, images, scripts_manager, masking, sd_models, processing_helpers
+from modules import shared, images, scripts_manager, masking, sd_models, sd_vae, processing_helpers
 
 
 debug = shared.log.trace if os.environ.get('SD_PROCESS_DEBUG', None) is not None else lambda *args, **kwargs: None
@@ -15,6 +15,7 @@ debug = shared.log.trace if os.environ.get('SD_PROCESS_DEBUG', None) is not None
 @dataclass(repr=False)
 class StableDiffusionProcessing:
     def __init__(self,
+                 sd_model_checkpoint: str = None, # # used only to set sd_model
                  sd_model=None, # pylint: disable=unused-argument # local instance of sd_model
                  # base params
                  prompt: str = "",
@@ -56,6 +57,7 @@ class StableDiffusionProcessing:
                  detailer_negative: str = '',
                  detailer_steps: int = 10,
                  detailer_strength: float = 0.3,
+                 detailer_resolution: int = 1024,
                  # hdr corrections
                  hdr_mode: int = 0,
                  hdr_brightness: float = 0,
@@ -71,14 +73,36 @@ class StableDiffusionProcessing:
                  hdr_tint_ratio: float = 0,
                  # img2img
                  init_images: list = None,
-                 resize_mode: int = 0,
-                 resize_name: str = 'None',
-                 resize_context: str = 'None',
                  denoising_strength: float = 0.3,
                  image_cfg_scale: float = None,
                  initial_noise_multiplier: float = None, # pylint: disable=unused-argument # a1111 compatibility
+                 # resize
                  scale_by: float = 1,
                  selected_scale_tab: int = 0, # pylint: disable=unused-argument # a1111 compatibility
+                 resize_mode: int = 0,
+                 resize_name: str = 'None',
+                 resize_context: str = 'None',
+                 width_before:int = 0,
+                 width_after:int = 0,
+                 width_mask:int = 0,
+                 height_before:int = 0,
+                 height_after:int = 0,
+                 height_mask:int = 0,
+                 resize_name_before: str = 'None',
+                 resize_name_after: str = 'None',
+                 resize_name_mask: str = 'None',
+                 resize_mode_before: int = 0,
+                 resize_mode_after: int = 0,
+                 resize_mode_mask: int = 0,
+                 resize_context_before: str = 'None',
+                 resize_context_after: str = 'None',
+                 resize_context_mask: str = 'None',
+                 selected_scale_tab_before: int = 0,
+                 selected_scale_tab_after: int = 0,
+                 selected_scale_tab_mask: int = 0,
+                 scale_by_before: float = 1,
+                 scale_by_after: float = 1,
+                 scale_by_mask: float = 1,
                  # inpaint
                  mask: Any = None,
                  latent_mask: Any = None,
@@ -115,6 +139,8 @@ class StableDiffusionProcessing:
                  outpath_grids=None,
                  do_not_save_samples: bool = False,
                  do_not_save_grid: bool = False,
+                 # xyz flag
+                 xyz: bool = False,
                  # scripts
                  script_args: list = [],
                  # overrides
@@ -179,6 +205,7 @@ class StableDiffusionProcessing:
         self.detailer_negative = detailer_negative
         self.detailer_steps = detailer_steps
         self.detailer_strength = detailer_strength
+        self.detailer_resolution = detailer_resolution
         self.restore_faces = restore_faces
         self.init_images = init_images
         self.resize_mode = resize_mode
@@ -229,6 +256,27 @@ class StableDiffusionProcessing:
         self.mask_for_overlay = mask_for_overlay
         self.paste_to = paste_to
         self.init_latent = None
+        self.width_before = width_before
+        self.width_after = width_after
+        self.width_mask = width_mask
+        self.height_before = height_before
+        self.height_after = height_after
+        self.height_mask = height_mask
+        self.resize_name_before = resize_name_before
+        self.resize_name_after = resize_name_after
+        self.resize_name_mask = resize_name_mask
+        self.resize_mode_before = resize_mode_before
+        self.resize_mode_after = resize_mode_after
+        self.resize_mode_mask = resize_mode_mask
+        self.resize_context_before = resize_context_before
+        self.resize_context_after = resize_context_after
+        self.resize_context_mask = resize_context_mask
+        self.selected_scale_tab_before = selected_scale_tab_before
+        self.selected_scale_tab_after = selected_scale_tab_after
+        self.selected_scale_tab_mask = selected_scale_tab_mask
+        self.scale_by_before = scale_by_before
+        self.scale_by_after = scale_by_after
+        self.scale_by_mask = scale_by_mask
 
         # special handled items
         if firstphase_width != 0 or firstphase_height != 0:
@@ -309,9 +357,21 @@ class StableDiffusionProcessing:
         self.negative_pooleds = []
         self.prompt_attention_masks = []
         self.negative_prompt_attention_mask = []
+        self.xyz = xyz
+        self.abort = False
 
-    def __str__(self):
-        return f'{self.__class__.__name__}: {self.__dict__}'
+        # set model
+        if sd_model_checkpoint is not None and len(sd_model_checkpoint) > 0:
+            from modules import sd_checkpoint
+            if sd_checkpoint.select_checkpoint(op='model', sd_model_checkpoint=sd_model_checkpoint) is None:
+                shared.log.error(f'Processing: model="{sd_model_checkpoint}" not found')
+                self.abort = True
+            else:
+                shared.opts.sd_model_checkpoint = sd_model_checkpoint
+                sd_models.reload_model_weights()
+
+    def __repr__(self):
+        return f'{self.__class__.__name__}({", ".join([f"{k}={v}" for k, v in self.__dict__.items() if k not in ["scripts_value", "script_args_value"]])})'
 
     @property
     def sd_model(self):
@@ -402,11 +462,12 @@ class StableDiffusionProcessingImg2Img(StableDiffusionProcessing):
         super().__init__(**kwargs)
 
     def init(self, all_prompts=None, all_seeds=None, all_subseeds=None):
-        if hasattr(self, 'init_images') and self.init_images is not None and len(self.init_images) > 0:
+        if self.init_images is not None and len(self.init_images) > 0:
+            vae_scale_factor = sd_vae.get_vae_scale_factor()
             if self.width is None or self.width == 0:
-                self.width = int(8 * (self.init_images[0].width * self.scale_by // 8))
+                self.width = int(vae_scale_factor * (self.init_images[0].width * self.scale_by // vae_scale_factor))
             if self.height is None or self.height == 0:
-                self.height = int(8 * (self.init_images[0].height * self.scale_by // 8))
+                self.height = int(vae_scale_factor * (self.init_images[0].height * self.scale_by // vae_scale_factor))
         if getattr(self, 'image_mask', None) is not None:
             shared.sd_model = sd_models.set_diffuser_pipe(self.sd_model, sd_models.DiffusersTaskType.INPAINTING)
         elif getattr(self, 'init_images', None) is not None:
@@ -420,7 +481,7 @@ class StableDiffusionProcessingImg2Img(StableDiffusionProcessing):
             self.all_subseeds = all_subseeds
         if self.image_mask is not None:
             self.ops.append('inpaint')
-        elif hasattr(self, 'init_images') and self.init_images is not None:
+        elif self.init_images is not None and len(self.init_images) > 0:
             self.ops.append('img2img')
         crop_region = None
 
@@ -447,23 +508,20 @@ class StableDiffusionProcessingImg2Img(StableDiffusionProcessing):
                 self.mask_for_overlay = Image.fromarray(np_mask)
             self.overlay_images = []
 
-        latent_mask = self.latent_mask if self.latent_mask is not None else self.image_mask
-
         add_color_corrections = shared.opts.img2img_color_correction and self.color_corrections is None
         if add_color_corrections:
             self.color_corrections = []
         processed_images = []
-        if getattr(self, 'init_images', None) is None:
+        if self.init_images is None:
             return
         if not isinstance(self.init_images, list):
             self.init_images = [self.init_images]
         for img in self.init_images:
             if img is None:
-                # shared.log.warning(f"Skipping empty image: images={self.init_images}")
                 continue
-            self.init_img_hash = hashlib.sha256(img.tobytes()).hexdigest()[0:8] # pylint: disable=attribute-defined-outside-init
-            self.init_img_width = img.width # pylint: disable=attribute-defined-outside-init
-            self.init_img_height = img.height # pylint: disable=attribute-defined-outside-init
+            self.init_img_hash = getattr(self, 'init_img_hash', hashlib.sha256(img.tobytes()).hexdigest()[0:8]) # pylint: disable=attribute-defined-outside-init
+            self.init_img_width = getattr(self, 'init_img_width', img.width) # pylint: disable=attribute-defined-outside-init
+            self.init_img_height = getattr(self, 'init_img_height', img.height) # pylint: disable=attribute-defined-outside-init
             if shared.opts.save_init_img:
                 images.save_image(img, path=shared.opts.outdir_init_images, basename=None, forced_filename=self.init_img_hash, suffix="-init-image")
             image = images.flatten(img, shared.opts.img2img_background_color)
@@ -501,17 +559,20 @@ class StableDiffusionProcessingControl(StableDiffusionProcessingImg2Img):
         debug(f'Process init: mode={self.__class__.__name__} kwargs={kwargs}') # pylint: disable=protected-access
         super().__init__(**kwargs)
 
-    def init_hr(self, scale = None, upscaler = None, force = False):
-        scale = scale or self.scale_by
-        upscaler = upscaler or self.resize_name
+    def init_hr(self, scale:float=None, upscaler:str=None, force:bool=False):
+        scale = scale or self.scale_by or self.scale_by_before
+        upscaler = upscaler or self.hr_upscaler or self.resize_name or self.resize_name_before
+        if upscaler is None:
+            upscaler = 'None'
+        # self.hr_upscaler = upscaler or 'None'
         use_scale = self.hr_resize_x == 0 or self.hr_resize_y == 0
         if upscaler == 'None' or (use_scale and scale == 1.0):
             return
         self.is_hr_pass = True
         self.hr_force = force
-        self.hr_upscaler = upscaler
         if use_scale:
-            self.hr_upscale_to_x, self.hr_upscale_to_y = 8 * int(self.width * scale / 8), 8 * int(self.height * scale / 8)
+            vae_scale_factor = sd_vae.get_vae_scale_factor()
+            self.hr_upscale_to_x, self.hr_upscale_to_y = vae_scale_factor * int(self.width * scale / vae_scale_factor), vae_scale_factor * int(self.height * scale / vae_scale_factor)
         else:
             self.hr_upscale_to_x, self.hr_upscale_to_y = self.hr_resize_x, self.hr_resize_y
 
@@ -539,5 +600,9 @@ def switch_class(p: StableDiffusionProcessing, new_class: type, dct: dict = None
     if dct is not None: # post init set additional values
         for k, v in dct.items():
             if hasattr(p, k):
-                setattr(p, k, v)
+                valtype = type(getattr(p, k, None))
+                if valtype in [int, float, str]:
+                    setattr(p, k, valtype(v))
+                else:
+                    setattr(p, k, v)
     return p

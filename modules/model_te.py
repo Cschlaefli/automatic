@@ -15,10 +15,14 @@ def load_t5(name=None, cache_dir=None):
     global loaded_te # pylint: disable=global-statement
     if name is None:
         return None
+    cache_dir = cache_dir or shared.opts.hfcache_dir
     from modules import modelloader
     modelloader.hf_login()
     repo_id = 'stabilityai/stable-diffusion-3-medium-diffusers'
-    fn = te_dict.get(name) if name in te_dict else None
+    if os.path.exists(name):
+        fn = name
+    else:
+        fn = te_dict.get(name) if name in te_dict else None
 
     if fn is not None and name.lower().endswith('gguf'):
         from modules import ggml
@@ -40,20 +44,19 @@ def load_t5(name=None, cache_dir=None):
             if torch.is_floating_point(param) and not is_param_float8_e4m3fn:
                 param = param.to(devices.dtype)
                 set_module_tensor_to_device(t5, param_name, device=0, value=param)
-        if shared.opts.diffusers_eval:
-            t5.eval()
         if t5.dtype != devices.dtype:
             try:
                 t5 = t5.to(dtype=devices.dtype)
             except Exception:
                 shared.log.error(f"T5: Failed to cast text encoder to {devices.dtype}, set dtype to {t5.dtype}")
                 raise
+        del state_dict
 
     elif fn is not None:
         with open(os.path.join('configs', 'flux', 'text_encoder_2', 'config.json'), encoding='utf8') as f:
             t5_config = transformers.T5Config(**json.load(f))
         state_dict = load_file(fn)
-        t5 = transformers.T5EncoderModel.from_pretrained(None, state_dict=state_dict, config=t5_config)
+        t5 = transformers.T5EncoderModel.from_pretrained(None, state_dict=state_dict, config=t5_config, torch_dtype=devices.dtype)
 
     elif 'fp16' in name.lower():
         t5 = transformers.T5EncoderModel.from_pretrained(repo_id, subfolder='text_encoder_3', cache_dir=cache_dir, torch_dtype=devices.dtype)
@@ -143,6 +146,7 @@ def load_vit_l():
     te = transformers.CLIPTextModel.from_pretrained(pretrained_model_name_or_path=None, state_dict=state_dict, config=config)
     te = te.to(dtype=devices.dtype)
     loaded_te = shared.opts.sd_text_encoder
+    del state_dict
     return te
 
 
@@ -153,6 +157,7 @@ def load_vit_g():
     te = transformers.CLIPTextModelWithProjection.from_pretrained(pretrained_model_name_or_path=None, state_dict=state_dict, config=config)
     te = te.to(dtype=devices.dtype)
     loaded_te = shared.opts.sd_text_encoder
+    del state_dict
     return te
 
 

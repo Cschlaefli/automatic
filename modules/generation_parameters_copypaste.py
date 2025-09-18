@@ -95,6 +95,8 @@ def add_paste_fields(tabname, init_img, fields, override_settings_component=None
         modules.ui.img2img_paste_fields = fields # compatibility
     elif tabname == 'control':
         modules.ui.control_paste_fields = fields
+    elif tabname == 'video':
+        modules.ui.video_paste_fields = fields
 
 
 def get_all_fields():
@@ -237,8 +239,10 @@ def connect_paste(button, local_paste_fields, input_comp, override_settings_comp
                     if hasattr(output, "step") and type(output.step) == float:
                         valtype = float
                     debug(f'Paste: "{key}"="{v}" type={valtype} var={vars(output)}')
-                    if valtype == bool and v == "False":
-                        val = False
+                    if valtype == bool:
+                        val = False if v.lower() == "false" else True
+                    elif valtype == list:
+                        val = v if isinstance(v, list) else [item.strip() for item in v.split(',')]
                     else:
                         val = valtype(v)
                     res.append(gr.update(value=val))

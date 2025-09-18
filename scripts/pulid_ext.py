@@ -28,10 +28,9 @@ class Script(scripts_manager.Script):
         return True
 
     def dependencies(self):
-        from installer import install, installed
-        if not installed('insightface==0.7.3', reload=False, quiet=True):
-            install('git+https://github.com/deepinsight/insightface@554a05561cb71cfebb4e012dfea48807f845a0c2#subdirectory=python-package', 'insightface') # insightface==0.7.3 with patches
-            install('albumentations==1.4.3', ignore=False, reinstall=True)
+        from installer import installed, install_insightface
+        if not installed('insightface', reload=False, quiet=True):
+            install_insightface()
 
     def register(self): # register xyz grid elements
         global registered # pylint: disable=global-statement
@@ -45,15 +44,17 @@ class Script(scripts_manager.Script):
             return fun
 
         import sys
-        xyz_classes = [v for k, v in sys.modules.items() if 'xyz_grid_classes' in k][0]
-        options = [
-            xyz_classes.AxisOption("[PuLID] Strength", float, apply_field("pulid_strength")),
-            xyz_classes.AxisOption("[PuLID] Zero", int, apply_field("pulid_zero")),
-            xyz_classes.AxisOption("[PuLID] Ortho", str, apply_field("pulid_ortho"), choices=lambda: ['off', 'v1', 'v2']),
-        ]
-        for option in options:
-            if option not in xyz_classes.axis_options:
-                xyz_classes.axis_options.append(option)
+        xyz_classes = [v for k, v in sys.modules.items() if 'xyz_grid_classes' in k]
+        if xyz_classes and len(xyz_classes) > 0:
+            xyz_classes = xyz_classes[0]
+            options = [
+                xyz_classes.AxisOption("[PuLID] Strength", float, apply_field("pulid_strength")),
+                xyz_classes.AxisOption("[PuLID] Zero", int, apply_field("pulid_zero")),
+                xyz_classes.AxisOption("[PuLID] Ortho", str, apply_field("pulid_ortho"), choices=lambda: ['off', 'v1', 'v2']),
+            ]
+            for option in options:
+                if option not in xyz_classes.axis_options:
+                    xyz_classes.axis_options.append(option)
 
 
     def decode_image(self,  b64):
@@ -230,7 +231,7 @@ class Script(scripts_manager.Script):
                     shared.sd_model.clip_vision_model = None
                     shared.sd_model.handler_ante = None
                 shared.sd_model = shared.sd_model.pipe
-                devices.torch_gc(force=True)
+                devices.torch_gc(force=True, reason='pulid')
             shared.log.debug(f'PuLID complete: class={shared.sd_model.__class__.__name__} preprocess={self.preprocess:.2f} pipe={"restore" if restore else "cache"}')
         return processed
 
@@ -255,7 +256,7 @@ class Script(scripts_manager.Script):
 
         p.seed = processing_helpers.get_fixed_seed(p.seed)
         if direct: # run pipeline directly
-            shared.state.begin('PuLID')
+            jobid = shared.state.begin('PuLID')
             processing.fix_seed(p)
             p.prompt = shared.prompt_styles.apply_styles_to_prompt(p.prompt, p.styles)
             p.negative_prompt = shared.prompt_styles.apply_negative_styles_to_prompt(p.negative_prompt, p.styles)
@@ -275,8 +276,8 @@ class Script(scripts_manager.Script):
                     id_scale=strength,
                     )[0]
             info = processing.create_infotext(p)
-            processed = processing.Processed(p, [output], info=info)
-            shared.state.end()
+            processed = processing.get_processed(p, [output], info=info)
+            shared.state.end(jobid)
         else: # let processing run the pipeline
             p.task_args['id_embedding'] = id_embedding
             p.task_args['uncond_id_embedding'] = uncond_id_embedding

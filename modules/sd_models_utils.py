@@ -26,7 +26,7 @@ def get_signature(cls):
 
 def get_call(cls):
     if cls is None or not hasattr(cls, '__call__'): # noqa: B004
-        return []
+        return {}
     signature = inspect.signature(cls.__call__, follow_wrapped=True)
     return signature.parameters
 
@@ -162,6 +162,10 @@ def apply_function_to_model(sd_model, function, options, op=None):
             sd_model.unet = function(sd_model.unet, op="unet", sd_model=sd_model)
         if hasattr(sd_model, 'transformer') and hasattr(sd_model.transformer, 'config'):
             sd_model.transformer = function(sd_model.transformer, op="transformer", sd_model=sd_model)
+        if hasattr(sd_model, 'transformer_2') and hasattr(sd_model.transformer_2, 'config'):
+            sd_model.transformer_2 = function(sd_model.transformer_2, op="transformer_2", sd_model=sd_model)
+        if hasattr(sd_model, 'transformer_3') and hasattr(sd_model.transformer_3, 'config'):
+            sd_model.transformer_3 = function(sd_model.transformer_3, op="transformer_3", sd_model=sd_model)
         if hasattr(sd_model, 'decoder_pipe') and hasattr(sd_model, 'decoder'):
             sd_model.decoder = None
             sd_model.decoder = sd_model.decoder_pipe.decoder = function(sd_model.decoder_pipe.decoder, op="decoder_pipe.decoder", sd_model=sd_model)

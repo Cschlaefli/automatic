@@ -24,7 +24,6 @@ ignore-paths=/usr/lib/.*$,
              modules/intel,
              modules/intel/ipex,
              modules/framepack/pipeline,
-             modules/ldsr,
              modules/onnx_impl,
              modules/pag,
              modules/postprocess/aurasr_arch.py,
@@ -35,9 +34,11 @@ ignore-paths=/usr/lib/.*$,
              modules/taesd,
              modules/teacache,
              modules/todo,
+             pipelines/bria,
              pipelines/flex2,
              pipelines/f_lite,
              pipelines/hidream,
+             pipelines/hdm,
              pipelines/meissonic,
              pipelines/omnigen2,
              pipelines/segmoe,
@@ -107,7 +108,7 @@ valid-metaclass-classmethod-first-arg=mcs
 [DESIGN]
 exclude-too-few-public-methods=
 ignored-parents=
-max-args=99
+max-args=199
 max-attributes=99
 max-bool-expr=99
 max-branches=199
@@ -204,6 +205,7 @@ disable=abstract-method,
         unnecessary-lambda-assigment,
         unnecessary-lambda,
         unused-wildcard-import,
+        useless-return,
         use-dict-literal,
         use-symbolic-message-instead,
         useless-suppression,

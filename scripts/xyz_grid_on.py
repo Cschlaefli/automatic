@@ -10,9 +10,9 @@ from io import StringIO
 from PIL import Image
 import numpy as np
 import gradio as gr
-from scripts.xyz_grid_shared import str_permutations, list_to_csv_string, re_range # pylint: disable=no-name-in-module
-from scripts.xyz_grid_classes import axis_options, AxisOption, SharedSettingsStackHelper # pylint: disable=no-name-in-module
-from scripts.xyz_grid_draw import draw_xyz_grid # pylint: disable=no-name-in-module
+from scripts.xyz.xyz_grid_shared import str_permutations, list_to_csv_string, re_range # pylint: disable=no-name-in-module
+from scripts.xyz.xyz_grid_classes import axis_options, AxisOption, SharedSettingsStackHelper # pylint: disable=no-name-in-module
+from scripts.xyz.xyz_grid_draw import draw_xyz_grid # pylint: disable=no-name-in-module
 from modules import shared, errors, scripts_manager, images, processing
 from modules.ui_components import ToolButton
 from modules.ui_sections import create_video_inputs
@@ -69,17 +69,17 @@ class Script(scripts_manager.Script):
                         x_type = gr.Dropdown(label="X type", container=True, choices=[x.label for x in self.current_axis_options], value=self.current_axis_options[0].label, type="index", elem_id=self.elem_id("x_type"))
                         x_values = gr.Textbox(label="X values", container=True, lines=1, elem_id=self.elem_id("x_values"))
                         x_values_dropdown = gr.Dropdown(label="X values", container=True, visible=False, multiselect=True, interactive=True)
-                        fill_x_button = ToolButton(value=symbols.fill, elem_id="xyz_grid_fill_x_tool_button", visible=False)
+                        fill_x_button = ToolButton(value=symbols.fill, elem_id="xyz_gridon_x_list", visible=False)
                     with gr.Row(variant='compact'):
                         y_type = gr.Dropdown(label="Y type", container=True, choices=[x.label for x in self.current_axis_options], value=self.current_axis_options[0].label, type="index", elem_id=self.elem_id("y_type"))
                         y_values = gr.Textbox(label="Y values", container=True, lines=1, elem_id=self.elem_id("y_values"))
                         y_values_dropdown = gr.Dropdown(label="Y values", container=True, visible=False, multiselect=True, interactive=True)
-                        fill_y_button = ToolButton(value=symbols.fill, elem_id="xyz_grid_fill_y_tool_button", visible=False)
+                        fill_y_button = ToolButton(value=symbols.fill, elem_id="xyz_gridon_y_list", visible=False)
                     with gr.Row(variant='compact'):
                         z_type = gr.Dropdown(label="Z type", container=True, choices=[x.label for x in self.current_axis_options], value=self.current_axis_options[0].label, type="index", elem_id=self.elem_id("z_type"))
                         z_values = gr.Textbox(label="Z values", container=True, lines=1, elem_id=self.elem_id("z_values"))
                         z_values_dropdown = gr.Dropdown(label="Z values", container=True, visible=False, multiselect=True, interactive=True)
-                        fill_z_button = ToolButton(value=symbols.fill, elem_id="xyz_grid_fill_z_tool_button", visible=False)
+                        fill_z_button = ToolButton(value=symbols.fill, elem_id="xyz_gridon_z_list", visible=False)
 
             with gr.Row():
                 with gr.Column():
@@ -207,6 +207,7 @@ class Script(scripts_manager.Script):
             processing.fix_seed(p)
         if not shared.opts.return_grid:
             p.batch_size = 1
+        jobid = shared.state.begin('XYZ Grid')
 
         def process_axis(opt, vals, vals_dropdown):
             if opt.label == 'Nothing':
@@ -411,10 +412,13 @@ class Script(scripts_manager.Script):
                 include_text=include_text,
             )
 
+        if hasattr(shared.sd_model, 'restore_pipeline') and (shared.sd_model.restore_pipeline is not None):
+            shared.sd_model.restore_pipeline()
+
         if not processed.images:
             active = False
             return processed # something broke, no further handling needed.
-        # processed.images = (1)*grid + (z > 1 ? z : 0)*subgrids + (x*y*z)*images
+
         have_grid = 1 if include_grid else 0
         have_subgrids = len(zs) if len(zs) > 1 and include_subgrids else 0
         have_images = processed.images[have_grid+have_subgrids:]
@@ -450,6 +454,7 @@ class Script(scripts_manager.Script):
         p.disable_extra_networks = True
         active = False
         xyz_results_cache = processed
+        shared.state.end(jobid)
         return processed
 
 

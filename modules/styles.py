@@ -9,6 +9,9 @@ import random
 from modules import files_cache, shared, infotext, sd_models, sd_vae
 
 
+debug_enabled = os.environ.get('SD_STYLES_DEBUG', None) is not None
+
+
 class Style():
     def __init__(self, name: str, desc: str = "", prompt: str = "", negative_prompt: str = "", extra: str = "", wildcards: str = "", filename: str = "", preview: str = "", mtime: float = 0):
         self.name = name
@@ -94,7 +97,7 @@ def apply_file_wildcards(prompt, replaced = [], not_found = [], recursion=0, see
 
 
 def apply_wildcards_to_prompt(prompt, all_wildcards, seed=-1, silent=False):
-    if len(prompt) == 0:
+    if prompt is None or len(prompt) == 0:
         return prompt
     old_state = None
     if seed > 0 and len(all_wildcards) > 0:
@@ -177,8 +180,12 @@ def apply_styles_to_extra(p, style: Style):
                 if not (type(orig) == int and type(v) == float): # dont convert float to int
                     v = type(orig)(v)
             setattr(p, k, v)
+            if debug_enabled:
+                shared.log.trace(f'Apply style param: {k}={v}')
             params.append(f'{k}={v}')
         elif shared.opts.data_labels.get(k, None) is not None:
+            if debug_enabled:
+                shared.log.trace(f'Apply style setting: {k}={v}')
             shared.opts.data[k] = v
             if k == 'sd_model_checkpoint':
                 sd_models.reload_model_weights()
@@ -186,6 +193,8 @@ def apply_styles_to_extra(p, style: Style):
                 sd_vae.reload_vae_weights()
             settings.append(f'{k}={v}')
         else:
+            if debug_enabled:
+                shared.log.trace(f'Apply style skip: {k}={v}')
             skipped.append(f'{k}={v}')
     shared.log.debug(f'Apply style: name="{style.name}" params={params} settings={settings} unknown={skipped} reference={True if reference_style else False}')
 
@@ -310,6 +319,7 @@ class StyleDatabase:
         if seeds is None or not isinstance(prompts, list):
             shared.log.error(f'Styles invalid seeds: {seeds}')
             return prompts, negatives
+        jobid = shared.state.begin('Styles')
         parsed_positive = []
         parsed_negative = []
         for i in range(len(prompts)):
@@ -322,6 +332,7 @@ class StyleDatabase:
             prompt = apply_styles_to_prompt(prompt, [self.find_style(x).negative_prompt for x in styles])
             prompt = apply_wildcards_to_prompt(prompt, [self.find_style(x).wildcards for x in styles], seeds[i])
             parsed_negative.append(prompt)
+        shared.state.end(jobid)
         return parsed_positive, parsed_negative
 
     def apply_styles_to_prompt(self, prompt, styles, wildcards:bool=True):
@@ -359,6 +370,9 @@ class StyleDatabase:
             return
         for style in p.styles:
             s = self.find_style(style)
+            if s == self.no_style:
+                shared.log.warning(f'Apply style: name="{style}" not found')
+                continue
             apply_styles_to_extra(p, s)
 
     def extract_comments(self, p):

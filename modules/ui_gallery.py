@@ -1,31 +1,45 @@
 import os
-from datetime import datetime
 from urllib.parse import unquote
 import gradio as gr
 from PIL import Image
-from modules import shared, ui_symbols, ui_common, images, video
+from modules import shared, ui_symbols, ui_common, images, video, modelstats
 from modules.ui_components import ToolButton
+
 
 def read_media(fn):
     fn = unquote(fn).replace('%3A', ':')
     if not os.path.isfile(fn):
         shared.log.error(f'Gallery not found: file="{fn}"')
         return [[], None, '', '', f'Media not found: {fn}']
-    stat = os.stat(fn)
-    if fn.lower().endswith('.mp4'):
-        frames, fps, duration, w, h, codec, _frame = video.get_video_params(fn)
+    stat_size, stat_mtime = modelstats.stat(fn)
+    # Treat common containers as video for preview; Gradio/HTML5 will handle codec support.
+    video_exts = ('.mp4', '.webm', '.mkv', '.avi', '.mov', '.mpg', '.mpeg', '.mjpeg')
+    if fn.lower().endswith(video_exts):
         geninfo = ''
-        log = f'''
-            <p>Video <b>{w} x {h}</b>
-            | Codec <b>{codec}</b>
-            | Frames <b>{frames:,}</b>
-            | FPS <b>{fps:.2f}</b>
-            | Duration <b>{duration:.2f}</b>
-            | Size <b>{stat.st_size:,}</b>
-            | Modified <b>{datetime.fromtimestamp(stat.st_mtime)}</b></p><br>
-            '''
-        return [gr.update(visible=False, value=[]), gr.update(visible=True, value=fn), geninfo, geninfo, log]
-    else:
+        try:
+            frames, fps, duration, w, h, codec, _frame = video.get_video_params(fn)
+            log = f'''
+                <p>Video <b>{w} x {h}</b>
+                | Codec <b>{codec}</b>
+                | Frames <b>{frames:,}</b>
+                | FPS <b>{fps:.2f}</b>
+                | Duration <b>{duration:.2f}</b>
+                | Size <b>{stat_size:,}</b>
+                | Modified <b>{stat_mtime}</b></p><br>
+                '''
+        except Exception as e:  # keep preview even if probing fails
+            shared.log.warning(f'Video probe failed: file="{fn}" {e}')
+            log = f'''
+                <p>Video
+                | Size <b>{stat_size:,}</b>
+                | Modified <b>{stat_mtime}</b></p><br>
+                '''
+        return [
+            gr.update(visible=False, value=[]),          # hide image gallery preview
+            gr.update(visible=True, value=fn),           # show video player
+            geninfo, geninfo, log
+        ]
+    else:  # image
         image = Image.open(fn)
         image.already_saved_as = fn
         geninfo, _items = images.read_info_from_image(image)
@@ -33,8 +47,8 @@ def read_media(fn):
             <p>Image <b>{image.width} x {image.height}</b>
             | Format <b>{image.format}</b>
             | Mode <b>{image.mode}</b>
-            | Size <b>{stat.st_size:,}</b>
-            | Modified <b>{datetime.fromtimestamp(stat.st_mtime)}</b></p><br>
+            | Size <b>{stat_size:,}</b>
+            | Modified <b>{stat_mtime}</b></p><br>
             '''
         return [gr.update(visible=True, value=[image]), gr.update(visible=False), geninfo, geninfo, log]
 

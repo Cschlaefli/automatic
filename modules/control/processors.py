@@ -133,11 +133,15 @@ class Processor():
         if processor_id is not None:
             self.load()
 
+    def __str__(self):
+        return f' Processor(id={self.processor_id} model={self.model.__class__.__name__})' if self.processor_id and self.model else ''
+
     def reset(self, processor_id: str = None):
         if self.model is not None:
             debug(f'Control Processor unloaded: id="{self.processor_id}"')
-        self.model = None
-        self.processor_id = processor_id
+            self.model = None
+            self.processor_id = processor_id
+            devices.torch_gc(force=True, reason='processor')
         # self.override = None
         # devices.torch_gc()
         self.load_config = { 'cache_dir': cache_dir }
@@ -156,6 +160,7 @@ class Processor():
                 self.load_config[k] = v
 
     def load(self, processor_id: str = None, force: bool = True) -> str:
+        from modules.shared import state
         try:
             t0 = time.time()
             processor_id = processor_id or self.processor_id
@@ -175,6 +180,7 @@ class Processor():
             cls = config[processor_id]['class']
             # log.debug(f'Control Processor loading: id="{processor_id}" class={cls.__name__}')
             debug(f'Control Processor config={self.load_config}')
+            jobid = state.begin('Load processor')
             if 'DWPose' in processor_id:
                 det_ckpt = 'https://download.openmmlab.com/mmdetection/v2.0/yolox/yolox_l_8x8_300e_coco/yolox_l_8x8_300e_coco_20211126_140236-d3bd2b23.pth'
                 if 'Tiny' == config['DWPose']['model']:
@@ -205,6 +211,7 @@ class Processor():
             else:
                 self.model = cls() # class instance only
             t1 = time.time()
+            state.end(jobid)
             self.processor_id = processor_id
             log.debug(f'Control Processor loaded: id="{processor_id}" class={self.model.__class__.__name__} time={t1-t0:.2f}')
             return f'Processor loaded: {processor_id}'
@@ -232,6 +239,8 @@ class Processor():
         if image_input is None:
             # log.error('Control Processor: no input')
             return image_process
+        if isinstance(image_input, list):
+            image_input = image_input[0]
         if self.processor_id not in config:
             return image_process
         if config[self.processor_id].get('dirty', False):

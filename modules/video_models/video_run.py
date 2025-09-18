@@ -52,7 +52,11 @@ def generate(*args, **kwargs):
     p.state = ui_state
     p.do_not_save_grid = True
     p.do_not_save_samples = not save_frames
-    if 'I2V' in model:
+    p.outpath_samples = shared.opts.outdir_samples or shared.opts.outdir_video
+    if 'T2V' in model:
+        if init_image is not None:
+            shared.log.warning('Video: op=T2V init image not supported')
+    elif 'I2V' in model:
         if init_image is None:
             return video_utils.queue_err('init image not set')
         p.task_args['image'] = images.resize_image(resize_mode=2, im=init_image, width=p.width, height=p.height, upscaler_name=None, output_type='pil')
@@ -65,13 +69,16 @@ def generate(*args, **kwargs):
         p.task_args['image'] = images.resize_image(resize_mode=2, im=init_image, width=p.width, height=p.height, upscaler_name=None, output_type='pil')
         p.task_args['last_image'] = images.resize_image(resize_mode=2, im=last_image, width=p.width, height=p.height, upscaler_name=None, output_type='pil')
         shared.log.debug(f'Video: op=FLF2V init={init_image} last={last_image} resized={p.task_args["image"]}')
-    elif 'T2V' in model:
+    elif 'VACE' in model:
         if init_image is not None:
-            shared.log.warning('Video: op=T2V init image not supported')
+            p.task_args['reference_images'] = [images.resize_image(resize_mode=2, im=init_image, width=p.width, height=p.height, upscaler_name=None, output_type='pil')]
+            shared.log.debug(f'Video: op=VACE reference={init_image} resized={p.task_args["reference_images"]}')
+    else:
+        shared.log.warning(f'Video: unknown model type "{model}"')
 
     # cleanup memory
     shared.sd_model = sd_models.apply_balanced_offload(shared.sd_model)
-    devices.torch_gc(force=True)
+    devices.torch_gc(force=True, reason='video')
 
     # set args
     processing.fix_seed(p)

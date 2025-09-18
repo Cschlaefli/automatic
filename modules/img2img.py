@@ -3,7 +3,7 @@ import itertools # SBM Batch frames
 import numpy as np
 import filetype
 from PIL import Image, ImageOps, ImageFilter, ImageEnhance, ImageChops, UnidentifiedImageError
-from modules import scripts_manager, shared, processing, images
+from modules import scripts_manager, shared, processing, images, errors
 from modules.generation_parameters_copypaste import create_override_settings_dict
 from modules.ui_common import plaintext_to_html
 from modules.memstats import memory_stats
@@ -13,22 +13,32 @@ debug = shared.log.trace if os.environ.get('SD_PROCESS_DEBUG', None) is not None
 debug('Trace: PROCESS')
 
 
+def validate_inputs(inputs):
+    outputs = []
+    for image in inputs:
+        if filetype.is_image(image):
+            outputs.append(image)
+        else:
+            shared.log.warning(f'Input skip: file="{image}" filetype={filetype.guess(image)}')
+    return outputs
+
+
 def process_batch(p, input_files, input_dir, output_dir, inpaint_mask_dir, args):
-    shared.log.debug(f'batch: {input_files}|{input_dir}|{output_dir}|{inpaint_mask_dir}')
+    # shared.log.debug(f'batch: {input_files}|{input_dir}|{output_dir}|{inpaint_mask_dir}')
     processing.fix_seed(p)
     image_files = []
     if input_files is not None and len(input_files) > 0:
         image_files = [f.name for f in input_files]
-        image_files = [f for f in image_files if filetype.is_image(f)]
+        image_files = validate_inputs(image_files)
         shared.log.info(f'Process batch: input images={len(image_files)}')
     elif os.path.isdir(input_dir):
         image_files = [os.path.join(input_dir, f) for f in os.listdir(input_dir)]
-        image_files = [f for f in image_files if filetype.is_image(f)]
+        image_files = validate_inputs(image_files)
         shared.log.info(f'Process batch: input folder="{input_dir}" images={len(image_files)}')
     is_inpaint_batch = False
     if inpaint_mask_dir and os.path.isdir(inpaint_mask_dir):
         inpaint_masks = [os.path.join(inpaint_mask_dir, f) for f in os.listdir(inpaint_mask_dir)]
-        inpaint_masks = [f for f in inpaint_masks if filetype.is_image(f)]
+        inpaint_masks = validate_inputs(inpaint_masks)
         is_inpaint_batch = len(inpaint_masks) > 0
         shared.log.info(f'Process batch: mask folder="{input_dir}" images={len(inpaint_masks)}')
     p.do_not_save_grid = True
@@ -99,9 +109,18 @@ def process_batch(p, input_files, input_dir, output_dir, inpaint_mask_dir, args)
 
         batch_image_files = batch_image_files * btcrept # List used for naming later.
 
-        processed = scripts_manager.scripts_img2img.run(p, *args)
-        if processed is None:
-            processed = processing.process_images(p)
+        try:
+            processed = scripts_manager.scripts_img2img.run(p, *args)
+            if processed is None:
+                processed = processing.process_images(p)
+        except Exception as e:
+            shared.log.error(f'Process batch: {e}')
+            errors.display(e, 'batch')
+            processed = None
+
+        if processed is None or len(processed.images) == 0:
+            shared.log.warning(f'Process batch: i={i+1}/{len(image_files)} no images processed')
+            continue
 
         for n, (image, image_file) in enumerate(itertools.zip_longest(processed.images, batch_image_files)):
             if image is None:
@@ -119,10 +138,10 @@ def process_batch(p, input_files, input_dir, output_dir, inpaint_mask_dir, args)
             if output_dir == '':
                 output_dir = shared.opts.outdir_img2img_samples
             os.makedirs(output_dir, exist_ok=True)
-            geninfo, items = images.read_info_from_image(image)
+            info, items = images.read_info_from_image(image)
             for k, v in items.items():
                 image.info[k] = v
-            images.save_image(image, path=output_dir, basename=basename, seed=None, prompt=None, extension=ext, info=geninfo, grid=False, pnginfo_section_name="extras", existing_info=image.info, forced_filename=forced_filename)
+            images.save_image(image, path=output_dir, basename=basename, seed=None, prompt=None, extension=ext, info=info, grid=False, pnginfo_section_name="extras", existing_info=image.info, forced_filename=forced_filename)
         processed = scripts_manager.scripts_img2img.after(p, processed, *args)
         shared.log.debug(f'Processed: images={len(batch_image_files)} memory={memory_stats()} batch')
 
@@ -140,7 +159,7 @@ def img2img(id_task: str, state: str, mode: int,
             sampler_index,
             mask_blur, mask_alpha,
             vae_type, tiling, hidiffusion,
-            detailer_enabled, detailer_prompt, detailer_negative, detailer_steps, detailer_strength,
+            detailer_enabled, detailer_prompt, detailer_negative, detailer_steps, detailer_strength, detailer_resolution,
             n_iter, batch_size,
             cfg_scale, image_cfg_scale,
             diffusers_guidance_rescale,
@@ -249,6 +268,7 @@ def img2img(id_task: str, state: str, mode: int,
         detailer_negative=detailer_negative,
         detailer_steps=detailer_steps,
         detailer_strength=detailer_strength,
+        detailer_resolution=detailer_resolution,
         init_images=[image],
         mask=mask,
         mask_blur=mask_blur,
@@ -292,13 +312,13 @@ def img2img(id_task: str, state: str, mode: int,
     if mask:
         p.extra_generation_params["Mask blur"] = mask_blur
         p.extra_generation_params["Mask alpha"] = mask_alpha
-        p.extra_generation_params["Mask invert"] = inpainting_mask_invert
-        p.extra_generation_params["Mask area"] = inpaint_full_res
         p.extra_generation_params["Mask padding"] = inpaint_full_res_padding
+        p.extra_generation_params["Mask invert"] = ['masked', 'invert'][inpainting_mask_invert]
+        p.extra_generation_params["Mask area"] = ["full", "masked"][inpaint_full_res]
     p.is_batch = mode == 5
     if p.is_batch:
         process_batch(p, img2img_batch_files, img2img_batch_input_dir, img2img_batch_output_dir, img2img_batch_inpaint_mask_dir, args)
-        processed = processing.Processed(p, [], p.seed, "")
+        processed = processing.get_processed(p, [], p.seed, "")
     else:
         processed = scripts_manager.scripts_img2img.run(p, *args)
         if processed is None:

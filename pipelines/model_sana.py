@@ -1,32 +1,30 @@
-import time
 import torch
 import diffusers
 import transformers
-from modules import shared, sd_models, devices, modelloader, model_quant
+from modules import shared, sd_models, sd_hijack_te, devices, model_quant
 
 
 def load_quants(kwargs, repo_id, cache_dir):
     kwargs_copy = kwargs.copy()
-    if model_quant.check_nunchaku('Model') and 'Sana_1600M' in repo_id: # only sana-1600m
+    if 'Sana_1600M_1024px' in repo_id and model_quant.check_nunchaku('Model'): # only available model
         import nunchaku
         nunchaku_precision = nunchaku.utils.get_precision()
-        nunchaku_repo = f"mit-han-lab/svdq-{nunchaku_precision}-sana-1600m"
+        nunchaku_repo = "nunchaku-tech/nunchaku-sana/svdq-int4_r32-sana1.6b.safetensors"
+        # https://huggingface.co/nunchaku-tech/nunchaku-sana/blob/main/svdq-int4_r32-sana1.6b.safetensors
         shared.log.debug(f'Load module: quant=Nunchaku module=transformer repo="{nunchaku_repo}" precision={nunchaku_precision} attention={shared.opts.nunchaku_attention}')
         kwargs['transformer'] = nunchaku.NunchakuSanaTransformer2DModel.from_pretrained(nunchaku_repo, torch_dtype=devices.dtype)
     elif model_quant.check_quant('Model'):
         load_args, quant_args = model_quant.get_dit_args(kwargs_copy, module='Model')
-        if quant_args:
-            kwargs['transformer'] = diffusers.SanaTransformer2DModel.from_pretrained(repo_id, subfolder="transformer", cache_dir=cache_dir, **load_args, **quant_args)
+        kwargs['transformer'] = diffusers.SanaTransformer2DModel.from_pretrained(repo_id, subfolder="transformer", cache_dir=cache_dir, **load_args, **quant_args)
     if model_quant.check_quant('TE'):
         load_args, quant_args = model_quant.get_dit_args(kwargs_copy, module='TE')
-        if quant_args:
-            kwargs['text_encoder'] = transformers.AutoModelForCausalLM.from_pretrained(repo_id, subfolder="text_encoder", cache_dir=cache_dir, **load_args, **quant_args)
+        kwargs['text_encoder'] = transformers.AutoModel.from_pretrained(repo_id, subfolder="text_encoder", cache_dir=cache_dir, **load_args, **quant_args)
     return kwargs
 
 
 def load_sana(checkpoint_info, kwargs={}):
-    modelloader.hf_login()
     repo_id = sd_models.path_to_repo(checkpoint_info)
+    sd_models.hf_auth_check(checkpoint_info)
 
     kwargs.pop('load_connected_pipeline', None)
     kwargs.pop('safety_checker', None)
@@ -49,7 +47,6 @@ def load_sana(checkpoint_info, kwargs={}):
 
     kwargs = load_quants(kwargs, repo_id, cache_dir=shared.opts.diffusers_dir)
     shared.log.debug(f'Load model: type=Sana repo="{repo_id}" args={list(kwargs)}')
-    t0 = time.time()
 
     if devices.dtype == torch.bfloat16 or devices.dtype == torch.float32:
         kwargs['torch_dtype'] = devices.dtype
@@ -80,14 +77,7 @@ def load_sana(checkpoint_info, kwargs={}):
     except Exception as e:
         shared.log.error(f'Load model: type=Sana {e}')
 
-    try:
-        if shared.opts.diffusers_eval:
-            pipe.text_encoder.eval()
-            pipe.transformer.eval()
-    except Exception:
-        pass
+    sd_hijack_te.init_hijack(pipe)
 
-    t1 = time.time()
-    shared.log.debug(f'Load model: type=Sana target={devices.dtype} te={pipe.text_encoder.dtype} transformer={pipe.transformer.dtype} vae={pipe.vae.dtype} time={t1-t0:.2f}')
-    devices.torch_gc(force=True)
+    devices.torch_gc(force=True, reason='load')
     return pipe

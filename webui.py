@@ -27,6 +27,7 @@ import modules.devices
 import modules.sd_checkpoint
 import modules.sd_samplers
 import modules.scripts_manager
+import modules.scripts
 import modules.sd_models
 import modules.sd_vae
 import modules.sd_unet
@@ -74,8 +75,6 @@ def initialize():
     modules.sd_checkpoint.init_metadata()
     modules.hashes.init_cache()
 
-    log.debug(f'Huggingface cache: path="{shared.opts.hfcache_dir}"')
-
     modules.sd_samplers.list_samplers()
     timer.startup.record("samplers")
 
@@ -113,6 +112,7 @@ def initialize():
 
     log.info('Load extensions')
     t_timer, t_total = modules.scripts_manager.load_scripts()
+    modules.scripts.register_runners()
     timer.startup.record("extensions")
     timer.startup.records["extensions"] = t_total # scripts can reset the time
     log.debug(f'Extensions init time: {t_timer.summary()}')
@@ -125,6 +125,10 @@ def initialize():
     modules.extra_networks.initialize()
     modules.extra_networks.register_default_extra_networks()
     timer.startup.record("networks")
+
+    from modules.models_hf import hf_init, hf_check_cache
+    hf_init()
+    hf_check_cache()
 
     if shared.cmd_opts.tls_keyfile is not None and shared.cmd_opts.tls_certfile is not None:
         try:
@@ -141,7 +145,7 @@ def initialize():
 
     # make the program just exit at ctrl+c without waiting for anything
     def sigint_handler(_sig, _frame):
-        log.trace(f'State history: uptime={round(time.time() - shared.state.server_start)} jobs={len(shared.state.job_history)} tasks={len(shared.state.task_history)} latents={shared.state.latent_history} images={shared.state.image_history}')
+        log.trace(f'State history: uptime={round(time.time() - shared.state.server_start)} jobs={shared.state.job_history} tasks={shared.state.task_history} latents={shared.state.latent_history} images={shared.state.image_history}')
         log.info('Exiting')
         try:
             for f in glob.glob("*.lock"):
@@ -157,14 +161,14 @@ def load_model():
     if not shared.opts.sd_checkpoint_autoload and shared.cmd_opts.ckpt is None:
         log.info('Model: autoload=False')
     else:
-        shared.state.begin('Load')
+        jobid = shared.state.begin('Load model')
         thread_model = Thread(target=lambda: shared.sd_model)
         thread_model.start()
         thread_refiner = Thread(target=lambda: shared.sd_refiner)
         thread_refiner.start()
         thread_model.join()
         thread_refiner.join()
-        shared.state.end()
+        shared.state.end(jobid)
     timer.startup.record("checkpoint")
     shared.opts.onchange("sd_model_checkpoint", wrap_queued_call(lambda: modules.sd_models.reload_model_weights(op='model')), call=False)
     shared.opts.onchange("sd_model_refiner", wrap_queued_call(lambda: modules.sd_models.reload_model_weights(op='refiner')), call=False)

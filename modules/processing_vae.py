@@ -137,6 +137,10 @@ def full_vae_decode(latents, model):
             latents = latents.to(devices.dtype_vae)
         else:
             latents = latents.to(next(iter(model.vae.post_quant_conv.parameters())).dtype)
+        # if getattr(model.vae.post_quant_conv, "bias", None) is not None:
+            # model.vae.post_quant_conv.bias = torch.nn.Parameter(model.vae.post_quant_conv.bias.to(devices.device), requires_grad=False)
+        # if getattr(model.vae.post_quant_conv, "weight", None) is not None:
+            # model.vae.post_quant_conv.weight = torch.nn.Parameter(model.vae.post_quant_conv.weight.to(devices.device), requires_grad=False)
     else:
         latents = latents.to(model.vae.dtype)
 
@@ -168,7 +172,8 @@ def full_vae_decode(latents, model):
     if debug:
         log_debug(f'VAE memory: {shared.mem_mon.read()}')
     vae_name = os.path.splitext(os.path.basename(sd_vae.loaded_vae_file))[0] if sd_vae.loaded_vae_file is not None else "default"
-    shared.log.debug(f'Decode: vae="{vae_name}" upcast={upcast} slicing={getattr(model.vae, "use_slicing", None)} tiling={getattr(model.vae, "use_tiling", None)} latents={list(latents.shape)}:{latents.device}:{latents.dtype} time={t1-t0:.3f}')
+    vae_scale_factor = sd_vae.get_vae_scale_factor(model)
+    shared.log.debug(f'Decode: vae="{vae_name}" scale={vae_scale_factor} upcast={upcast} slicing={getattr(model.vae, "use_slicing", None)} tiling={getattr(model.vae, "use_tiling", None)} latents={list(latents.shape)}:{latents.device}:{latents.dtype} time={t1-t0:.3f}')
     return decoded
 
 
@@ -263,17 +268,16 @@ def vae_decode(latents, model, output_type='np', vae_type='Full', width=None, he
         model = model.pipe
     if latents is None or not torch.is_tensor(latents): # already decoded
         return latents
-    prev_job = shared.state.job
 
     if vae_type == 'Remote':
-        shared.state.job = 'Remote VAE'
+        jobid = shared.state.begin('Remote VAE')
         from modules.sd_vae_remote import remote_decode
         tensors = remote_decode(latents=latents, width=width, height=height)
-        shared.state.job = prev_job
+        shared.state.end(jobid)
         if tensors is not None and len(tensors) > 0:
             return vae_postprocess(tensors, model, output_type)
 
-    shared.state.job = 'VAE'
+    jobid = shared.state.begin('VAE Decode')
     if latents.shape[0] == 0:
         shared.log.error(f'VAE nothing to decode: {latents.shape}')
         return []
@@ -303,15 +307,16 @@ def vae_decode(latents, model, output_type='np', vae_type='Full', width=None, he
             decoded = 2.0 * decoded - 1.0 # typical normalized range
 
     images = vae_postprocess(decoded, model, output_type)
-    shared.state.job = prev_job
     if shared.cmd_opts.profile or debug:
         t1 = time.time()
         shared.log.debug(f'Profile: VAE decode: {t1-t0:.2f}')
     devices.torch_gc()
+    shared.state.end(jobid)
     return images
 
 
 def vae_encode(image, model, vae_type='Full'): # pylint: disable=unused-variable
+    jobid = shared.state.begin('VAE Encode')
     import torchvision.transforms.functional as f
     if shared.state.interrupted or shared.state.skipped:
         return []
@@ -327,6 +332,7 @@ def vae_encode(image, model, vae_type='Full'): # pylint: disable=unused-variable
     else:
         latents = taesd_vae_encode(image=tensor)
     devices.torch_gc()
+    shared.state.end(jobid)
     return latents
 
 

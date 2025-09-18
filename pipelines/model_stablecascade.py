@@ -155,7 +155,7 @@ def load_cascade_combined(checkpoint_info, diffusers_load_config):
         latent_dim_scale=sd_model.decoder_pipe.config.latent_dim_scale,
     )
 
-    devices.torch_gc(force=True)
+    devices.torch_gc(force=True, reason='load')
     shared.log.debug(f'StableCascade combined: {sd_model.__class__.__name__}')
     return sd_model
 
@@ -190,6 +190,7 @@ class StableCascadeDecoderPipelineFixed(diffusers.StableCascadeDecoderPipeline):
     ):
         shared.sd_model = sd_models.apply_balanced_offload(shared.sd_model)
         # 0. Define commonly used variables
+        guidance_scale = guidance_scale or 0.0
         self.guidance_scale = guidance_scale
         self.do_classifier_free_guidance = self.guidance_scale > 1
         device = self._execution_device

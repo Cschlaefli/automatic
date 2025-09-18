@@ -22,6 +22,14 @@ class ModelDef(BaseModel):
     field_exclude: bool = False
 
 
+class DummyConfig:
+    dummy_value = None
+
+
+if not hasattr(BaseModel, "__config__"):
+    BaseModel.__config__ = DummyConfig
+
+
 class PydanticModelGenerator:
     def __init__(
         self,
@@ -207,6 +215,8 @@ ReqTxt2Img = PydanticModelGenerator(
         {"key": "extra", "type": Optional[dict], "default": {}, "exclude": True},
     ]
 ).generate_model()
+if not hasattr(ReqTxt2Img, "__config__"):
+    ReqTxt2Img.__config__ = DummyConfig
 StableDiffusionTxt2ImgProcessingAPI = ReqTxt2Img
 
 class ResTxt2Img(BaseModel):
@@ -235,6 +245,8 @@ ReqImg2Img = PydanticModelGenerator(
         {"key": "extra", "type": Optional[dict], "default": {}, "exclude": True},
     ]
 ).generate_model()
+if not hasattr(ReqImg2Img, "__config__"):
+    ReqImg2Img.__config__ = DummyConfig
 StableDiffusionImg2ImgProcessingAPI = ReqImg2Img
 
 class ResImg2Img(BaseModel):
@@ -308,13 +320,13 @@ class ReqPostLog(BaseModel):
     error: Optional[str] = Field(default=None, title="Error message", description="The error message to log")
 
 class ReqHistory(BaseModel):
-    id: str = Field(default=None, title="Task ID", description="Task ID")
+    id: Union[int, str, None] = Field(default=None, title="Task ID", description="Task ID")
 
 class ReqProgress(BaseModel):
     skip_current_image: bool = Field(default=False, title="Skip current image", description="Skip current image serialization")
 
 class ResProgress(BaseModel):
-    id: str = Field(title="TaskID", description="Task ID")
+    id: Union[int, str, None] = Field(title="TaskID", description="Task ID")
     progress: float = Field(title="Progress", description="The progress with a range of 0 to 1")
     eta_relative: float = Field(title="ETA in secs")
     state: dict = Field(title="State", description="The current state snapshot")
@@ -322,11 +334,11 @@ class ResProgress(BaseModel):
     textinfo: Optional[str] = Field(default=None, title="Info text", description="Info text used by WebUI.")
 
 class ResHistory(BaseModel):
-    id: str = Field(title="ID", description="Task ID")
+    id: Union[int, str, None] = Field(title="ID", description="Task ID")
     job: str = Field(title="Job", description="Job name")
-    op: str = Field(title="Operation", description="Operation name")
-    start: Union[float, None] = Field(title="Start", description="Start time")
-    end: Union[float, None] = Field(title="End", description="End time")
+    op: str = Field(title="Operation", description="Job state")
+    timestamp: Union[float, None] = Field(title="Timestamp", description="Job timestamp")
+    duration: Union[float, None] = Field(title="Duration", description="Job duration")
     outputs: List[str] = Field(title="Outputs", description="List of filenames")
 
 class ResStatus(BaseModel):
@@ -334,7 +346,7 @@ class ResStatus(BaseModel):
     task: str = Field(title="Task", description="Current job")
     timestamp: Optional[str] = Field(title="Timestamp", description="Timestamp of the current job")
     current: str = Field(title="Task", description="Current job")
-    id: str = Field(title="ID", description="ID of the current task")
+    id: Union[int, str, None] = Field(title="ID", description="ID of the current task")
     job: int = Field(title="Job", description="Current job")
     jobs: int = Field(title="Jobs", description="Total jobs")
     total: int = Field(title="Total Jobs", description="Total jobs")
@@ -345,7 +357,6 @@ class ResStatus(BaseModel):
     elapsed: Optional[float] = Field(default=None, title="Elapsed time")
     eta: Optional[float] = Field(default=None, title="ETA in secs")
     progress: Optional[float] = Field(default=None, title="Progress", description="The progress with a range of 0 to 1")
-
 
 class ReqInterrogate(BaseModel):
     image: str = Field(default="", title="Image", description="Image to work on, must be a Base64 string containing the image's data.")
@@ -422,12 +433,61 @@ class ResScripts(BaseModel):
     control: list = Field(default_factory=list, title="Control", description="Titles of scripts (control)")
     postprocessing: list = Field(default_factory=list, title="Postprocessing", description="Titles of scripts (postprocessing)")
 
-class ResNVML(BaseModel): # definition of http response
-    name: str = Field(title="Name")
-    version: dict = Field(title="Version")
-    pci: dict = Field(title="Version")
-    memory: dict = Field(title="Version")
-    clock: dict = Field(title="Version")
-    load: dict = Field(title="Version")
-    power: list = []
-    state: str = Field(title="State")
+class ResGPU(BaseModel): # definition of http response
+    name: str = Field(title="GPU Name")
+    data: dict = Field(title="Name/Value data")
+    chart: list[float, float] = Field(title="Exactly two items to place on chart")
+
+# helper function
+
+def create_model_from_signature(func: Callable, model_name: str, base_model: Type[BaseModel] = BaseModel, additional_fields: List = [], exclude_fields: List[str] = []):
+    from PIL import Image
+
+    class Config:
+        extra = 'allow'
+
+    args, _, varkw, defaults, kwonlyargs, kwonlydefaults, annotations = inspect.getfullargspec(func)
+    config = Config if varkw else None # Allow extra params if there is a **kwargs parameter in the function signature
+    defaults = defaults or []
+    args = args or []
+    for arg in exclude_fields:
+        if arg in args:
+            args.remove(arg)
+    non_default_args = len(args) - len(defaults)
+    defaults = (...,) * non_default_args + defaults
+    keyword_only_params = {param: kwonlydefaults.get(param, Any) for param in kwonlyargs}
+    for k, v in annotations.items():
+        if v == List[Image.Image]:
+            annotations[k] = List[str]
+        elif v == Image.Image:
+            annotations[k] = str
+        elif str(v) == 'typing.List[modules.control.unit.Unit]':
+            annotations[k] = List[str]
+    model_fields = {param: (annotations.get(param, Any), default) for param, default in zip(args, defaults)}
+
+    for fld in additional_fields:
+        model_def = ModelDef(
+            field=underscore(fld["key"]),
+            field_alias=fld["key"],
+            field_type=fld["type"],
+            field_value=fld["default"],
+            field_exclude=fld["exclude"] if "exclude" in fld else False)
+        model_fields[model_def.field] = (model_def.field_type, Field(default=model_def.field_value, alias=model_def.field_alias, exclude=model_def.field_exclude))
+
+    for fld in exclude_fields:
+        if fld in model_fields:
+            del model_fields[fld]
+
+    model = create_model(
+        model_name,
+        **model_fields,
+        **keyword_only_params,
+        __base__=base_model,
+        __config__=config,
+    )
+    try:
+        model.__config__.allow_population_by_field_name = True
+        model.__config__.allow_mutation = True
+    except Exception:
+        pass
+    return model

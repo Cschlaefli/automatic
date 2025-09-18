@@ -380,6 +380,7 @@ class ScriptRunner:
                 self.selectable_scripts.append(script)
         except Exception as e:
             errors.log.error(f'Script initialize: {path} {e}')
+            errors.display(e, 'script')
 
     @tracer.start_as_current_span("initialize_scripts")
     def initialize_scripts(self, is_img2img=False, is_control=False):
@@ -398,10 +399,17 @@ class ScriptRunner:
         self.selectable_scripts.clear()
         self.auto_processing_scripts = scripts_auto_postprocessing.create_auto_preprocessing_script_data()
 
-        sorted_scripts = sorted(scripts_data, key=lambda x: x.script_class().title().lower())
+        try:
+            sorted_scripts = sorted(scripts_data, key=lambda x: x.script_class().title().lower())
+        except Exception:
+            sorted_scripts = scripts_data
         for script_class, path, _basedir, _script_module in sorted_scripts:
             self.add_script(script_class, path, is_img2img, is_control)
-        sorted_scripts = sorted(self.auto_processing_scripts, key=lambda x: x.script_class().title().lower())
+
+        try:
+            sorted_scripts = sorted(self.auto_processing_scripts, key=lambda x: x.script_class().title().lower())
+        except Exception:
+            sorted_scripts = self.auto_processing_scripts
         for script_class, path, _basedir, _script_module in sorted_scripts:
             self.add_script(script_class, path, is_img2img, is_control)
 

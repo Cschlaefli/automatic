@@ -5,7 +5,7 @@ from fastapi import FastAPI, APIRouter, Depends, Request
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.exceptions import HTTPException
 from modules import errors, shared, postprocessing
-from modules.api import models, endpoints, script, helpers, server, nvml, generate, process, control, gallery, loras, docs
+from modules.api import models, endpoints, script, helpers, server, generate, process, control, docs, gpu
 
 
 errors.install()
@@ -54,7 +54,7 @@ class Api:
         self.add_api_route("/sdapi/v1/options", server.get_config, methods=["GET"], response_model=models.OptionsModel)
         self.add_api_route("/sdapi/v1/options", server.set_config, methods=["POST"])
         self.add_api_route("/sdapi/v1/cmd-flags", server.get_cmd_flags, methods=["GET"], response_model=models.FlagsModel)
-        self.add_api_route("/sdapi/v1/nvml", nvml.get_nvml, methods=["GET"], response_model=List[models.ResNVML])
+        self.add_api_route("/sdapi/v1/gpu", gpu.get_gpu_status, methods=["GET"], response_model=List[models.ResGPU])
 
         # core api using locking
         self.add_api_route("/sdapi/v1/txt2img", self.generate.post_text2img, methods=["POST"], response_model=models.ResTxt2Img)
@@ -91,6 +91,7 @@ class Api:
         self.add_api_route("/sdapi/v1/interrogate", endpoints.post_interrogate, methods=["POST"])
         self.add_api_route("/sdapi/v1/vqa", endpoints.post_vqa, methods=["POST"])
         self.add_api_route("/sdapi/v1/checkpoint", endpoints.get_checkpoint, methods=["GET"])
+        self.add_api_route("/sdapi/v1/checkpoint", endpoints.set_checkpoint, methods=["POST"])
         self.add_api_route("/sdapi/v1/refresh-checkpoints", endpoints.post_refresh_checkpoints, methods=["POST"])
         self.add_api_route("/sdapi/v1/unload-checkpoint", endpoints.post_unload_checkpoint, methods=["POST"])
         self.add_api_route("/sdapi/v1/reload-checkpoint", endpoints.post_reload_checkpoint, methods=["POST"])
@@ -98,19 +99,26 @@ class Api:
         self.add_api_route("/sdapi/v1/refresh-vae", endpoints.post_refresh_vae, methods=["POST"])
         self.add_api_route("/sdapi/v1/latents", endpoints.get_latent_history, methods=["GET"], response_model=List[str])
         self.add_api_route("/sdapi/v1/latents", endpoints.post_latent_history, methods=["POST"], response_model=int)
+        self.add_api_route("/sdapi/v1/modules", endpoints.get_modules, methods=["GET"])
 
         # lora api
-        self.add_api_route("/sdapi/v1/lora", loras.get_lora, methods=["GET"], response_model=dict)
-        self.add_api_route("/sdapi/v1/loras", loras.get_loras, methods=["GET"], response_model=List[dict])
-        self.add_api_route("/sdapi/v1/refresh-loras", loras.post_refresh_loras, methods=["POST"])
+        from modules.api import loras
+        loras.register_api()
 
         # gallery api
+        from modules.api import gallery
         gallery.register_api(self.app)
+
+        # nudenet api
+        from modules.api import nudenet
+        nudenet.register_api()
+
+        # civitai api
+        from modules.civitai import api_civitai
+        api_civitai.register_api()
 
 
     def add_api_route(self, path: str, endpoint, **kwargs):
-        if (shared.cmd_opts.auth or shared.cmd_opts.auth_file) and shared.cmd_opts.api_only:
-            kwargs['dependencies'] = [Depends(self.auth)]
         if shared.opts.subpath is not None and len(shared.opts.subpath) > 0:
             self.app.add_api_route(f'{shared.opts.subpath}{path}', endpoint, **kwargs)
         self.app.add_api_route(path, endpoint, **kwargs)

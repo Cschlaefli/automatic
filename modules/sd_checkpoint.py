@@ -18,6 +18,7 @@ sd_metadata_file = os.path.join(paths.data_path, "metadata.json")
 sd_metadata = None
 sd_metadata_pending = 0
 sd_metadata_timer = 0
+warn_once = False
 
 
 class CheckpointInfo:
@@ -105,7 +106,7 @@ class CheckpointInfo:
         return self.shorthash
 
     def __str__(self):
-        return f'checkpoint: type={self.type} title="{self.title}" path="{self.path}"'
+        return f"CheckpointInfo(name={self.name} filename={self.filename} hash={self.shorthash} type={self.type}"
 
 
 def setup_model():
@@ -127,7 +128,7 @@ def list_models():
     global checkpoints_list # pylint: disable=global-statement
     checkpoints_list.clear()
     checkpoint_aliases.clear()
-    ext_filter = [".safetensors"] if shared.opts.sd_disable_ckpt or shared.native else [".ckpt", ".safetensors"]
+    ext_filter = [".safetensors"]
     model_list = list(modelloader.load_models(model_path=model_path, model_url=None, command_path=shared.opts.ckpt_dir, ext_filter=ext_filter, download_name=None, ext_blacklist=[".vae.ckpt", ".vae.safetensors"]))
     safetensors_list = []
     for filename in sorted(model_list, key=str.lower):
@@ -136,42 +137,59 @@ def list_models():
         if checkpoint_info.name is not None:
             checkpoint_info.register()
     diffusers_list = []
-    if shared.native:
-        for repo in modelloader.load_diffusers_models(clear=True):
-            checkpoint_info = CheckpointInfo(repo['name'], sha=repo['hash'])
-            diffusers_list.append(checkpoint_info)
-            if checkpoint_info.name is not None:
-                checkpoint_info.register()
+    for repo in modelloader.load_diffusers_models(clear=True):
+        checkpoint_info = CheckpointInfo(repo['name'], sha=repo['hash'])
+        diffusers_list.append(checkpoint_info)
+        if checkpoint_info.name is not None:
+            checkpoint_info.register()
     if shared.cmd_opts.ckpt is not None:
-        if not os.path.exists(shared.cmd_opts.ckpt) and not shared.native:
-            if shared.cmd_opts.ckpt.lower() != "none":
-                shared.log.warning(f'Load model: path="{shared.cmd_opts.ckpt}" not found')
-        else:
-            checkpoint_info = CheckpointInfo(shared.cmd_opts.ckpt)
-            if checkpoint_info.name is not None:
-                checkpoint_info.register()
-                shared.opts.data['sd_model_checkpoint'] = checkpoint_info.title
+        checkpoint_info = CheckpointInfo(shared.cmd_opts.ckpt)
+        if checkpoint_info.name is not None:
+            checkpoint_info.register()
+            shared.opts.data['sd_model_checkpoint'] = checkpoint_info.title
     elif shared.cmd_opts.ckpt != shared.default_sd_model_file and shared.cmd_opts.ckpt is not None:
         shared.log.warning(f'Load model: path="{shared.cmd_opts.ckpt}" not found')
-    shared.log.info(f'Available Models: safetensors="{shared.opts.ckpt_dir}":{len(safetensors_list)} diffusers="{shared.opts.diffusers_dir}":{len(diffusers_list)} items={len(checkpoints_list)} time={time.time()-t0:.2f}')
+    shared.log.info(f'Available Models: safetensors="{shared.opts.ckpt_dir}":{len(safetensors_list)} diffusers="{shared.opts.diffusers_dir}":{len(diffusers_list)} reference={len(list(shared.reference_models))} items={len(checkpoints_list)} time={time.time()-t0:.2f}')
     checkpoints_list = dict(sorted(checkpoints_list.items(), key=lambda cp: cp[1].filename))
 
 
 def update_model_hashes():
-    txt = []
+    def update_model_hashes_table(rows):
+        html = """
+            <table class="simple-table">
+                <thead>
+                    <tr><th>Name</th><th>Type</th><th>Hash</th></tr>
+                </thead>
+                <tbody>
+                    {tbody}
+                </tbody>
+            </table>
+        """
+        tbody = ''
+        for row in rows:
+            try:
+                tbody += f"""
+                    <tr>
+                        <td>{row.name}</td>
+                        <td>{row.type}</td>
+                        <td>{row.shorthash}</td>
+                    </tr>
+                """
+            except Exception as e:
+                shared.log.error(f'Model list: row={row} {e}')
+        return html.format(tbody=tbody)
+
     lst = [ckpt for ckpt in checkpoints_list.values() if ckpt.hash is None]
     for ckpt in lst:
         ckpt.hash = model_hash(ckpt.filename)
     lst = [ckpt for ckpt in checkpoints_list.values() if ckpt.sha256 is None or ckpt.shorthash is None]
     shared.log.info(f'Models list: hash missing={len(lst)} total={len(checkpoints_list)}')
+    updated = []
     for ckpt in lst:
         ckpt.sha256 = hashes.sha256(ckpt.filename, f"checkpoint/{ckpt.name}")
         ckpt.shorthash = ckpt.sha256[0:10] if ckpt.sha256 is not None else None
-        if ckpt.sha256 is not None:
-            txt.append(f'Hash: <b>{ckpt.title}</b> {ckpt.shorthash}')
-    txt.append(f'Updated hashes for <b>{len(lst)}</b> out of <b>{len(checkpoints_list)}</b> models')
-    txt = '<br>'.join(txt)
-    return txt
+        updated.append(ckpt)
+        yield update_model_hashes_table(updated)
 
 
 def remove_hash(s):
@@ -184,6 +202,7 @@ def get_closet_checkpoint_match(s: str) -> CheckpointInfo:
         checkpoint_info = CheckpointInfo(model_name) # create a virutal model info
         checkpoint_info.type = 'huggingface'
         return checkpoint_info
+
     if s.startswith('huggingface/'):
         model_name = s.replace('huggingface/', '')
         checkpoint_info = CheckpointInfo(model_name) # create a virutal model info
@@ -226,7 +245,8 @@ def get_closet_checkpoint_match(s: str) -> CheckpointInfo:
 
     # civitai search
     if shared.opts.sd_checkpoint_autodownload and s.startswith("https://civitai.com/api/download/models"):
-        fn = modelloader.download_civit_model_thread(model_name=None, model_url=s, model_path='', model_type='Model', token=None)
+        from modules.civitai.download_civitai import download_civit_model_thread
+        fn = download_civit_model_thread(model_name=None, model_url=s, model_path='', model_type='Model', token=None)
         if fn is not None:
             checkpoint_info = CheckpointInfo(fn)
             return checkpoint_info
@@ -250,8 +270,8 @@ def model_hash(filename):
         return 'NOHASH'
 
 
-def select_checkpoint(op='model'):
-    model_checkpoint = shared.opts.data.get('sd_model_refiner', None) if op == 'refiner' else shared.opts.data.get('sd_model_checkpoint', None)
+def select_checkpoint(op='model', sd_model_checkpoint=None):
+    model_checkpoint = sd_model_checkpoint or (shared.opts.data.get('sd_model_refiner', None) if op == 'refiner' else shared.opts.data.get('sd_model_checkpoint', None))
     if model_checkpoint is None or model_checkpoint == 'None' or len(model_checkpoint) < 3:
         return None
     checkpoint_info = get_closet_checkpoint_match(model_checkpoint)
@@ -260,9 +280,12 @@ def select_checkpoint(op='model'):
         return checkpoint_info
     if len(checkpoints_list) == 0:
         shared.log.error("No models found")
-        shared.log.info("Set system paths to use existing folders")
-        shared.log.info("  or use --models-dir <path-to-folder> to specify base folder with all models")
-        shared.log.info("  or use --ckpt <path-to-checkpoint> to force using specific model")
+        global warn_once # pylint: disable=global-statement
+        if not warn_once:
+            warn_once = True
+            shared.log.info("Set system paths to use existing folders")
+            shared.log.info("  or use --models-dir <path-to-folder> to specify base folder with all models")
+            shared.log.info("  or use --ckpt <path-to-checkpoint> to force using specific model")
         return None
     if model_checkpoint is not None:
         if model_checkpoint != 'model.safetensors' and model_checkpoint != 'stabilityai/stable-diffusion-xl-base-1.0':

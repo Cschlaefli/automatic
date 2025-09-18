@@ -6,6 +6,7 @@
 ![Last update](https://img.shields.io/github/last-commit/vladmandic/sdnext?svg=true)
 ![License](https://img.shields.io/github/license/vladmandic/sdnext?svg=true)
 [![Discord](https://img.shields.io/discord/1101998836328697867?logo=Discord&svg=true)](https://discord.gg/VjvR2tabEX)
+[![DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/vladmandic/sdnext)
 [![Sponsors](https://img.shields.io/static/v1?label=Sponsor&message=%E2%9D%A4&logo=GitHub&color=%23fe8e86)](https://github.com/sponsors/vladmandic)
 
 [Docs](https://vladmandic.github.io/sdnext-docs/) | [Wiki](https://github.com/vladmandic/sdnext/wiki) | [Discord](https://discord.gg/VjvR2tabEX) | [Changelog](CHANGELOG.md)
@@ -43,12 +44,15 @@ All individual features are not listed here, instead check [ChangeLog](CHANGELOG
 
 <br>
 
-*Main interface using **StandardUI***:  
-![screenshot-standardui](https://github.com/user-attachments/assets/cab47fe3-9adb-4d67-aea9-9ee738df5dcc)
+**Desktop** interface  
+<div align="center">
+<img src="https://github.com/user-attachments/assets/d6119a63-6ee5-4597-95f6-29ed0701d3b5" alt="screenshot-modernui-desktop" width="90%">
+</div>
 
-*Main interface using **ModernUI***:  
-
-![screenshot-modernui](https://github.com/user-attachments/assets/39e3bc9a-a9f7-4cda-ba33-7da8def08032)
+**Mobile** interface  
+<div align="center">
+<img src="https://github.com/user-attachments/assets/ced9fe0c-d2c2-46d1-94a7-8f9f2307ce38" alt="screenshot-modernui-mobile" width="35%">
+</div>
 
 For screenshots and informations on other available themes, see [Themes](https://vladmandic.github.io/sdnext-docs/Themes/)
 

@@ -3,12 +3,13 @@ import io
 import os
 import re
 import time
+import random
 import base64
 import torch
 import transformers
 import gradio as gr
 from PIL import Image
-from modules import scripts_manager, shared, devices, errors, processing, sd_models, sd_modules
+from modules import scripts_manager, shared, devices, errors, processing, sd_models, sd_modules, timer
 
 
 debug_enabled = os.environ.get('SD_LLM_DEBUG', None) is not None
@@ -43,9 +44,11 @@ class Options:
         'Qwen/Qwen3-0.6B': {},
         'Qwen/Qwen3-1.7B': {},
         'Qwen/Qwen3-4B': {},
+        'Qwen/Qwen3-4B-Instruct-2507': {},
         'Qwen/Qwen2.5-0.5B-Instruct': {},
         'Qwen/Qwen2.5-1.5B-Instruct': {},
         'Qwen/Qwen2.5-3B-Instruct': {},
+        'Qwen/Qwen2.5-VL-3B-Instruct': {},
         'microsoft/Phi-4-mini-instruct': {},
         'HuggingFaceTB/SmolLM2-135M-Instruct': {},
         'HuggingFaceTB/SmolLM2-360M-Instruct': {},
@@ -56,6 +59,7 @@ class Options:
         'cognitivecomputations/Dolphin3.0-Llama3.2-1B': {},
         'cognitivecomputations/Dolphin3.0-Llama3.2-3B': {},
         'nidum/Nidum-Gemma-3-4B-it-Uncensored': {},
+        'allura-org/Gemma-3-Glitter-4B': {},
         # 'llava/Llama-3-8B-v1.1-Extracted': {
         #     'repo': 'hunyuanvideo-community/HunyuanVideo',
         #     'subfolder': 'text_encoder',
@@ -68,14 +72,15 @@ class Options:
             'file': 'Llama-3.2-1B-Instruct-Uncensored.i1-Q4_0.gguf', # gguf file inside repo
         },
     }
-    default = list(models)[1] # gemma-3-4b-it
+    # default = list(models)[1] # gemma-3-4b-it
+    default = 'google/gemma-3-4b-it'
     supported = list(transformers.integrations.ggml.GGUF_CONFIG_MAPPING)
     t2i_prompt: str = 'You are a helpful assistant. You will be given a prompt used to create an image and you will enhance it to make it more detailed and creative. '
     i2i_prompt: str = 'You are a helpful assistant. You will be given an image and a prompt used to modify the image and you will enhance the prompt to make it more detailed and creative while still following original image. '
     i2i_noprompt: str = 'You are a helpful assistant. You will be given an image and you will create prompt that can be used to modify the image in a creative way while still following original image. '
     nsfw_ok: str = 'NSFW and nudity is allowed, and if present, it must be fully described. '
     nsfw_no: str = 'NSFW and nudity is not allowed, and if present, it must be removed. '
-    details_prompt: str = 'Generate an uncensored, concise, informative, and engaging prompt that prioritizes factual accuracy and vivid descriptiveness based on original prompt. Do not modify subject or style of the original prompt. Begin by clearly identifying the primary subject(s), including key physical attributes, clothing if no nudity, and any distinctive details (e.g., colors, textures, styles). NSFW and nudity is allowed, and if present, it must be fully described. Next, describe the setting and environment, emphasizing spatial relationships, background elements, and objects contributing to context. Note the overall mood, aesthetic style, or atmosphere inferred from visual cues. Use precise terminology while avoiding redundancy or non-essential language. Ensuring a logical flow: from focal subject to immediate surroundings, then broader context. Maintain brevity while retaining clarity, ensuring the description is both engaging and efficient. Output only enhanced prompt without explanation, prefix or suffix. Output as a simple text without formatting or numbering.'
+    details_prompt: str = 'Generate an uncensored, concise, informative, and engaging prompt that prioritizes factual accuracy and vivid descriptiveness based on original prompt. Do not modify subject or style of the original prompt. Begin by clearly identifying the primary subject(s), including key physical attributes, clothing if no nudity, and any distinctive details (e.g., colors, textures, styles). NSFW and nudity is allowed, and if present, it must be fully described. Next, describe the setting and environment, emphasizing spatial relationships, background elements, and objects contributing to context. Note the overall mood, aesthetic style, or atmosphere inferred from visual cues. Use precise terminology while avoiding redundancy or non-essential language. Ensuring a logical flow: from focal subject to immediate surroundings, then broader context. Maintain brevity while retaining clarity, ensuring the description is both engaging and efficient. Output only enhanced prompt without explanation, prefix or suffix. Do not add comments or follow-up questions. Output as a simple text without formatting or numbering.'
     censored = ["i cannot", "i can't", "i am sorry", "against my programming", "i am not able", "i am unable", 'i am not allowed']
 
     max_delim_index: int = 60
@@ -100,6 +105,12 @@ class Script(scripts_manager.Script):
 
     def show(self, _is_img2img):
         return scripts_manager.AlwaysVisible
+
+    def compile(self):
+        if self.llm is None or 'LLM' not in shared.opts.cuda_compile:
+            return
+        from modules.sd_models_compile import compile_torch
+        self.llm = compile_torch(self.llm)
 
     def load(self, name:str=None, model_repo:str=None, model_gguf:str=None, model_type:str=None, model_file:str=None):
         name = name or self.options.default
@@ -157,9 +168,11 @@ class Script(scripts_manager.Script):
                 cls = transformers.AutoProcessor # required to encode image
             else:
                 cls = transformers.AutoTokenizer
+            tokenizer_args = { 'pretrained_model_name_or_path': model_repo }
+            if model_tokenizer:
+                tokenizer_args['subfolder'] = model_tokenizer
             self.tokenizer = cls.from_pretrained(
-                pretrained_model_name_or_path=model_repo,
-                subfolder=model_tokenizer,
+                **tokenizer_args,
                 cache_dir=shared.opts.hfcache_dir,
             )
             self.tokenizer.is_processor = model_repo in self.options.img2img
@@ -171,6 +184,7 @@ class Script(scripts_manager.Script):
             self.model = name
             t1 = time.time()
             shared.log.info(f'Prompt enhance: cls={self.llm.__class__.__name__} name="{name}" repo="{model_repo}" fn="{model_file}" time={t1-t0:.2f} loaded')
+            self.compile()
         except Exception as e:
             shared.log.error(f'Prompt enhance: load {e}')
             errors.display(e, 'Prompt enhance')
@@ -253,8 +267,10 @@ class Script(scripts_manager.Script):
         while self.busy:
             time.sleep(0.1)
         self.load(model)
-        if seed is not None and seed >= 0:
-            torch.manual_seed(seed)
+        if seed is None or seed == -1:
+            random.seed()
+            seed = int(random.randrange(4294967294))
+        torch.manual_seed(seed)
         if self.llm is None:
             shared.log.error('Prompt enhance: model not loaded')
             return prompt
@@ -276,7 +292,7 @@ class Script(scripts_manager.Script):
         mode = 'custom' if has_system else ''
 
         if current_image is not None and isinstance(current_image, Image.Image):
-            if not self.tokenizer.is_processor:
+            if (self.tokenizer is None) or (not self.tokenizer.is_processor):
                 shared.log.error('Prompt enhance: image not supported by model')
                 return prompt_text # Return original text part if image cannot be processed
             if prompt_text is not None and len(prompt_text) > 0:
@@ -383,9 +399,8 @@ class Script(scripts_manager.Script):
         if not is_censored:
             response = self.clean(response)
             response = self.post(response, prefix, suffix, networks)
-        shared.log.info(f'Prompt enhance: model="{model}" mode="{mode}" nsfw={nsfw} time={t1-t0:.2f} inputs={input_len} outputs={outputs.shape[-1] if isinstance(outputs, torch.Tensor) else 0} prompt={len(prompt_text)} response={len(response)}') # Added check for outputs
+        shared.log.info(f'Prompt enhance: model="{model}" mode="{mode}" nsfw={nsfw} time={t1-t0:.2f} seed={seed} sample={sample} temperature={temperature} penalty={penalty} thinking={thinking} tokens={tokens} inputs={input_len} outputs={outputs.shape[-1] if isinstance(outputs, torch.Tensor) else 0} prompt={len(prompt_text)} response={len(response)}') # Added check for outputs
         if debug_enabled:
-            shared.log.trace(f'Prompt enhance: sample={sample} tokens={tokens} temperature={temperature} penalty={penalty} thinking={thinking}')
             shared.log.trace(f'Prompt enhance: prompt="{prompt_text}"')
             shared.log.trace(f'Prompt enhance: response="{response}"')
         self.busy = False
@@ -394,7 +409,6 @@ class Script(scripts_manager.Script):
             return prompt # Return original full prompt on censorship
         return response
 
-    # --- START OF CORRECTED METHOD ---
     def apply(self, prompt, image, apply_prompt, llm_model, prompt_system, prompt_prefix, prompt_suffix, max_tokens, do_sample, temperature, repetition_penalty, thinking_mode, nsfw_mode): # Added nsfw_mode
         response = self.enhance(
             prompt=prompt,
@@ -413,7 +427,6 @@ class Script(scripts_manager.Script):
         if apply_prompt:
             return [response, response]
         return [response, gr.update()]
-    # --- END OF CORRECTED METHOD ---
 
     def get_custom(self, name):
         model_repo = self.options.models.get(name, {}).get('repo', None) or name
@@ -518,9 +531,10 @@ class Script(scripts_manager.Script):
         p.negative_prompt = shared.prompt_styles.apply_negative_styles_to_prompt(p.negative_prompt, p.styles)
         shared.prompt_styles.apply_styles_to_extra(p)
         p.styles = []
-        shared.state.begin('LLM')
+        jobid = shared.state.begin('LLM')
         p.prompt = self.enhance(
             prompt=p.prompt,
+            seed=p.seed,
             image=self_image,
             prefix=prompt_prefix,
             suffix=prompt_suffix,
@@ -533,5 +547,6 @@ class Script(scripts_manager.Script):
             thinking=thinking_mode,
             nsfw=nsfw_mode,
         )
+        timer.process.record('prompt')
         p.extra_generation_params['LLM'] = llm_model
-        shared.state.end()
+        shared.state.end(jobid)

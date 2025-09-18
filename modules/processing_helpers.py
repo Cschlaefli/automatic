@@ -11,7 +11,7 @@ import numpy as np
 import cv2
 from PIL import Image
 from blendmodes.blend import blendLayers, BlendType
-from modules import shared, devices, images, sd_models, sd_samplers, sd_hijack_hypertile, processing_vae, timer
+from modules import shared, devices, images, sd_models, sd_samplers, sd_vae, sd_hijack_hypertile, processing_vae, timer
 
 
 debug = shared.log.trace if os.environ.get('SD_PROCESS_DEBUG', None) is not None else lambda *args, **kwargs: None
@@ -209,8 +209,6 @@ def decode_first_stage(model, x):
         shared.log.debug(f'Decode VAE: skipped={shared.state.skipped} interrupted={shared.state.interrupted}')
         x_sample = torch.zeros((len(x), 3, x.shape[2] * 8, x.shape[3] * 8), dtype=devices.dtype_vae, device=devices.device)
         return x_sample
-    prev_job = shared.state.job
-    shared.state.job = 'VAE'
     with devices.autocast(disable = x.dtype==devices.dtype_vae):
         try:
             if hasattr(model, 'decode_first_stage'):
@@ -224,7 +222,6 @@ def decode_first_stage(model, x):
         except Exception as e:
             x_sample = x
             shared.log.error(f'Decode VAE: {e}')
-    shared.state.job = prev_job
     return x_sample
 
 
@@ -286,7 +283,8 @@ def resize_init_images(p):
     if getattr(p, 'image', None) is not None and getattr(p, 'init_images', None) is None:
         p.init_images = [p.image]
     if getattr(p, 'init_images', None) is not None and len(p.init_images) > 0:
-        tgt_width, tgt_height = 8 * math.ceil(p.init_images[0].width / 8), 8 * math.ceil(p.init_images[0].height / 8)
+        vae_scale_factor = sd_vae.get_vae_scale_factor()
+        tgt_width, tgt_height = vae_scale_factor * math.ceil(p.init_images[0].width / vae_scale_factor), vae_scale_factor * math.ceil(p.init_images[0].height / vae_scale_factor)
         if p.init_images[0].size != (tgt_width, tgt_height):
             shared.log.debug(f'Resizing init images: original={p.init_images[0].width}x{p.init_images[0].height} target={tgt_width}x{tgt_height}')
             p.init_images = [images.resize_image(1, image, tgt_width, tgt_height, upscaler_name=None) for image in p.init_images]
@@ -304,25 +302,35 @@ def resize_init_images(p):
 
 @tracer.start_as_current_span("resize_hires")
 def resize_hires(p, latents): # input=latents output=pil if not latent_upscaler else latent
-    if not torch.is_tensor(latents):
-        shared.log.warning('Hires: input is not tensor')
-        decoded = processing_vae.vae_decode(latents=latents, model=shared.sd_model, vae_type=p.vae_type, output_type='pil', width=p.width, height=p.height)
-        return decoded
-
     if (p.hr_upscale_to_x == 0 or p.hr_upscale_to_y == 0) and hasattr(p, 'init_hr'):
         shared.log.error('Hires: missing upscaling dimensions')
-        return decoded
+        return latents
+
+    jobid = shared.state.begin('Resize')
 
     if p.hr_upscaler.lower().startswith('latent'):
+        if isinstance(latents, list):
+            try:
+                for i in range(len(latents)):
+                    if not torch.is_tensor(latents[i]):
+                        shared.log.warning(f'Hires: input[{i}]={type(latents[i])} not tensor')
+                        latents[i] = processing_vae.vae_encode(image=latents[i], model=shared.sd_model, vae_type=p.vae_type)
+                    latents = torch.cat(latents, dim=0)
+            except Exception as e:
+                shared.log.error(f'Hires: prepare latents: {e}')
+                resized = latents
+        elif not torch.is_tensor(latents):
+            shared.log.warning(f'Hires: input={type(latents)} not tensor')
         resized = images.resize_image(p.hr_resize_mode, latents, p.hr_upscale_to_x, p.hr_upscale_to_y, upscaler_name=p.hr_upscaler, context=p.hr_resize_context)
-        return resized
+    else:
+        decoded = processing_vae.vae_decode(latents=latents, model=shared.sd_model, vae_type=p.vae_type, output_type='pil', width=p.width, height=p.height)
+        resized = []
+        for image in decoded:
+            resize = images.resize_image(p.hr_resize_mode, image, p.hr_upscale_to_x, p.hr_upscale_to_y, upscaler_name=p.hr_upscaler, context=p.hr_resize_context)
+            resized.append(resize)
 
-    decoded = processing_vae.vae_decode(latents=latents, model=shared.sd_model, vae_type=p.vae_type, output_type='pil', width=p.width, height=p.height)
-    resized = []
-    for image in decoded:
-        resize = images.resize_image(p.hr_resize_mode, image, p.hr_upscale_to_x, p.hr_upscale_to_y, upscaler_name=p.hr_upscaler, context=p.hr_resize_context)
-        resized.append(resize)
     devices.torch_gc()
+    shared.state.end(jobid)
     return resized
 
 
@@ -368,7 +376,7 @@ def calculate_base_steps(p, use_denoise_start, use_refiner_start):
     if len(getattr(p, 'timesteps', [])) > 0:
         return None
     cls = shared.sd_model.__class__.__name__
-    if 'Flex' in cls or 'HiDreamImageEditingPipeline' in cls or 'Kontext' in cls:
+    if 'Flex' in cls or 'Kontext' in cls or 'Edit' in cls or 'Wan' in cls:
         steps = p.steps
     elif not is_txt2img():
         if cls in sd_models.i2i_pipes:
@@ -389,7 +397,7 @@ def calculate_base_steps(p, use_denoise_start, use_refiner_start):
 
 def calculate_hires_steps(p):
     cls = shared.sd_model.__class__.__name__
-    if 'Flex' in cls or 'HiDreamImageEditingPipeline' in cls or 'Kontext' in cls:
+    if 'Flex' in cls or 'Kontext' in cls or 'Edit' in cls or 'Wan' in cls:
         steps = p.steps
     elif p.hr_second_pass_steps > 0:
         steps = (p.hr_second_pass_steps // p.denoising_strength) + 1
@@ -403,7 +411,7 @@ def calculate_hires_steps(p):
 
 def calculate_refiner_steps(p):
     cls = shared.sd_model.__class__.__name__
-    if 'Flex' in cls or 'HiDreamImageEditingPipeline' in cls or 'Kontext' in cls:
+    if 'Flex' in cls or 'Kontext' in cls or 'Edit' in cls or 'Wan' in cls:
         steps = p.steps
     elif "StableDiffusionXL" in shared.sd_refiner.__class__.__name__:
         if p.refiner_start > 0 and p.refiner_start < 1:
@@ -488,10 +496,14 @@ def update_sampler(p, sd_model, second_pass=False):
             return
         sampler = sd_samplers.find_sampler(sampler_selection)
         if sampler is None:
-            shared.log.warning(f'Sampler: sampler="{sampler_selection}" not found')
+            shared.log.warning(f'Sampler: "{sampler_selection}" not found')
             sampler = sd_samplers.all_samplers_map.get("UniPC")
         sampler = sd_samplers.create_sampler(sampler.name, sd_model)
         if sampler is None or sampler_selection == 'Default':
+            if second_pass:
+                p.hr_sampler = 'Default'
+            else:
+                p.sampler_name = 'Default'
             return
         sampler_options = []
         if sampler.config.get('rescale_betas_zero_snr', False) and shared.opts.schedulers_rescale_betas != shared.opts.data_labels.get('schedulers_rescale_betas').default:
@@ -507,7 +519,7 @@ def update_sampler(p, sd_model, second_pass=False):
 def get_job_name(p, model):
     if hasattr(model, 'pipe'):
         model = model.pipe
-    if hasattr(p, 'xyz'):
+    if getattr(p, 'xyz', False):
         return 'Ignore' # xyz grid handles its own jobs
     if sd_models.get_diffusers_task(model) == sd_models.DiffusersTaskType.TEXT_2_IMAGE:
         return 'Text'

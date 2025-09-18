@@ -56,6 +56,12 @@ def get_model_type(pipe):
         model_type = 'pixartsigma'
     elif "PixArtAlpha" in name:
         model_type = 'pixartalpha'
+    elif "Bria" in name:
+        model_type = 'bria'
+    elif 'Qwen' in name:
+        model_type = 'qwen'
+    elif 'NextStep' in name:
+        model_type = 'nextstep'
     # video models
     elif "CogVideo" in name:
         model_type = 'cogvideo'
@@ -70,6 +76,8 @@ def get_model_type(pipe):
     # hybrid models
     elif 'Wan' in name:
         model_type = 'wanai'
+    elif 'HDM-xut' in name:
+        model_type = 'hdm'
     else:
         model_type = name
     return model_type

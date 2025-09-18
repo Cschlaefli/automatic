@@ -8,7 +8,7 @@ import os
 import threading
 from PIL import Image
 import torch
-from modules import devices, paths
+from modules import devices, paths, shared
 
 
 TAESD_MODELS = {
@@ -36,22 +36,20 @@ prev_cls = ''
 prev_type = ''
 prev_model = ''
 lock = threading.Lock()
-supported = ['sd', 'sdxl', 'f1', 'h1', 'lumina2', 'hunyuanvideo', 'wanai', 'mochivideo', 'pixartsigma', 'pixartalpha', 'hunyuandit', 'omnigen']
+supported = ['sd', 'sdxl', 'sd3', 'f1', 'h1', 'lumina2', 'hunyuanvideo', 'wanai', 'mochivideo', 'pixartsigma', 'pixartalpha', 'hunyuandit', 'omnigen', 'qwen']
 
 
 def warn_once(msg, variant=None):
-    from modules import shared
     variant = variant or shared.opts.taesd_variant
     global prev_warnings # pylint: disable=global-statement
     if not prev_warnings:
         prev_warnings = True
-        shared.log.error(f'Decode: type="taesd" variant="{variant}": {msg}')
+        shared.log.warning(f'Decode: type="taesd" variant="{variant}": {msg}')
     return Image.new('RGB', (8, 8), color = (0, 0, 0))
 
 
 def get_model(model_type = 'decoder', variant = None):
     global prev_cls, prev_type, prev_model # pylint: disable=global-statement
-    from modules import shared
     model_cls = shared.sd_model_type
     if model_cls is None or model_cls == 'none':
         return None, variant
@@ -61,7 +59,7 @@ def get_model(model_type = 'decoder', variant = None):
         model_cls = 'sdxl'
     elif model_cls in {'h1', 'lumina2', 'chroma'}:
         model_cls = 'f1'
-    elif model_cls in {'wanai'}:
+    elif model_cls in {'wanai', 'qwen'}:
         variant = variant or 'TAE WanVideo'
     elif model_cls not in supported:
         warn_once(f'cls={shared.sd_model.__class__.__name__} type={model_cls} unsuppported', variant=variant)
@@ -136,7 +134,6 @@ def get_model(model_type = 'decoder', variant = None):
 
 def decode(latents):
     with lock:
-        from modules import shared
         vae, variant = get_model(model_type='decoder')
         if vae is None or max(latents.shape) > 256: # safetey check of large tensors
             return latents
@@ -153,8 +150,8 @@ def decode(latents):
                     image = (image / 2.0 + 0.5).clamp(0, 1).detach()
                     return image
         except Exception as e:
-            from modules import errors
-            errors.display(e, f'taesd"')
+            # from modules import errors
+            # errors.display(e, 'taesd"')
             return warn_once(f'decode: {e}', variant=variant)
 
 
